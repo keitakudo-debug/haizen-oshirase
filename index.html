@@ -309,6 +309,8 @@
 
     <div class="subhead">データ</div>
     <button class="btn" id="resetStatusBtn">全件を「発注済」に戻す（翌年の使い回し用）</button>
+    <button class="btn" id="copyNotifyConfigBtn" style="margin-top:8px;">📋 GitHub通知用データをコピー</button>
+    <p class="helptext">アプリを閉じてても届く通知を使うにはGitHub Actionsの設定が必要です（README参照）。ここを押すとこの内容が notify-config.json 用にコピーされるので、リポジトリの notify-config.json に貼り付けて git push してください。</p>
 
     <div class="modal-actions">
       <button class="btn primary" data-close-modal="settingsModal">閉じる</button>
@@ -787,6 +789,23 @@ document.getElementById("resetStatusBtn").addEventListener("click", () => {
   saveState();
   renderAll();
   toast("全件を発注済に戻しました");
+});
+document.getElementById("copyNotifyConfigBtn").addEventListener("click", async () => {
+  const config = {
+    dayDates: state.dayDates,
+    notifyMinutes: state.notifyMinutes,
+    items: state.scheduleData.map(i => ({
+      id: i.id, date: i.date, time: i.time, nextDay: i.nextDay, team: i.team, place: i.place, note: i.note || ""
+    }))
+  };
+  const text = JSON.stringify(config, null, 2) + "\n";
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("コピーしました。notify-config.json に貼り付けて push してください");
+  } catch (e) {
+    toast("コピーに失敗しました。手動でコンソールから内容を確認してください");
+    console.log(text);
+  }
 });
 document.getElementById("addDateBtn").addEventListener("click", () => {
   const input = document.getElementById("newDateLabel");
