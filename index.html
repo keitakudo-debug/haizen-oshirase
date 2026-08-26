@@ -172,9 +172,11 @@
   .item-summary { font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.6; }
   .item-note { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .item-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
-  .pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+  .item-status-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
   .pill.pending { background: var(--pending-bg); color: var(--pending-fg); }
   .pill.done { background: var(--done-bg); color: var(--done-fg); }
+  .pill.warn { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
   .item-actions { display: flex; gap: 6px; }
 
   .empty-state { text-align: center; color: var(--muted); font-size: 13px; padding: 32px 12px; }
@@ -696,6 +698,8 @@ function renderList(){
       ? '<div class="item-time">' + escapeHtml(item.time) + (item.nextDay ? '<small>翌日</small>' : '') + '</div>'
       : '<div class="item-time unset">時間未定</div>';
     const pillClass = item.status === "配達完了" ? "done" : "pending";
+    const dateUnset = item.status === "発注済" && !!item.time && !state.dayDates[item.date];
+    const warnHtml = dateUnset ? '<span class="pill warn" title="⚙設定 →「日程（実際の日付）」で' + escapeHtml(item.date) + 'の日付を入れないと自動通知されません">⚠ 日付未設定</span>' : '';
 
     li.innerHTML =
       timeHtml +
@@ -704,7 +708,7 @@ function renderList(){
         '<div class="item-summary">' + formatQtySummary(item) + '</div>' +
         (item.note ? '<div class="item-note">📝 ' + escapeHtml(item.note) + '</div>' : '') +
         '<div class="item-foot">' +
-          '<span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' +
+          '<div class="item-status-group"><span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' + warnHtml + '</div>' +
           '<div class="item-actions">' +
             '<button class="btn small" data-act="toggle" data-id="' + item.id + '">' + (item.status === "発注済" ? "完了にする" : "未完了に戻す") + '</button>' +
             '<button class="btn small ghost" data-act="edit" data-id="' + item.id + '">編集</button>' +
