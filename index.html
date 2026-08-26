@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>配膳お知らせ</title>
+<meta name="description" content="配膳・配達スケジュールの時間前通知アプリ">
+<meta name="theme-color" content="#16211f">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="配膳お知らせ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #16211f;
+    --ink-soft: #3a453f;
+    --paper: #f2f5f1;
+    --paper-2: #e6ebe4;
+    --card: #fbfcfa;
+    --line: #d9ded6;
+    --muted: #66756d;
+    --accent: #c97a2b;
+    --accent-ink: #fffaf3;
+    --pending-bg: #fbeedc;
+    --pending-fg: #8a5417;
+    --done-bg: #e2eee6;
+    --done-fg: #2d6b4b;
+    --danger: #b6462a;
+    --focus: #2d6b4b;
+    --shadow: 0 1px 2px rgba(22,33,31,0.06), 0 6px 20px -8px rgba(22,33,31,0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #eef2ee;
+      --ink-soft: #c7d0c9;
+      --paper: #10160f;
+      --paper-2: #1a221b;
+      --card: #1a221b;
+      --line: #2b352c;
+      --muted: #94a39a;
+      --accent: #e8a24f;
+      --accent-ink: #201304;
+      --pending-bg: #382a15;
+      --pending-fg: #f0be7d;
+      --done-bg: #17301f;
+      --done-fg: #7fcf9f;
+      --danger: #e8967c;
+      --focus: #7fcf9f;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px -10px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #eef2ee;
+    --ink-soft: #c7d0c9;
+    --paper: #10160f;
+    --paper-2: #1a221b;
+    --card: #1a221b;
+    --line: #2b352c;
+    --muted: #94a39a;
+    --accent: #e8a24f;
+    --accent-ink: #201304;
+    --pending-bg: #382a15;
+    --pending-fg: #f0be7d;
+    --done-bg: #17301f;
+    --done-fg: #7fcf9f;
+    --danger: #e8967c;
+    --focus: #7fcf9f;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px -10px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 48px;
+  }
+  h1, h2, h3 { font-family: "Shippori Mincho", "Hiragino Mincho ProN", serif; font-weight: 700; margin: 0; text-wrap: balance; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  .app { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 14px 16px; margin: 0 -16px 16px;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 28px; height: 28px; flex: none; color: var(--accent); }
+  .brand h1 { font-size: 19px; letter-spacing: .01em; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { border-color: var(--accent); }
+
+  .banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--pending-bg); color: var(--pending-fg);
+    border: 1px solid color-mix(in srgb, var(--pending-fg) 30%, transparent);
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px;
+  }
+  .banner p { margin: 0; line-height: 1.5; }
+  .banner button {
+    flex: none; border: none; background: var(--pending-fg); color: var(--pending-bg);
+    padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+  .banner.info { background: var(--paper-2); color: var(--ink-soft); border-color: var(--line); }
+  .banner.info button { background: var(--ink); color: var(--paper); }
+
+  .hero {
+    background: linear-gradient(155deg, var(--ink) 0%, color-mix(in srgb, var(--ink) 82%, var(--accent)) 100%);
+    color: var(--accent-ink);
+    border-radius: 20px; padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow);
+  }
+  :root[data-theme="dark"] .hero, @media (prefers-color-scheme: dark) { }
+  .hero-eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .75; margin-bottom: 6px; }
+  .hero-title { font-size: 22px; color: var(--accent-ink); }
+  .hero-sub { font-size: 13px; opacity: .82; margin-top: 6px; line-height: 1.6; }
+  .hero-count { font-variant-numeric: tabular-nums; font-size: 30px; font-weight: 700; margin-top: 10px; font-family: "Shippori Mincho", serif; }
+  .hero-empty { font-size: 14px; opacity: .85; line-height: 1.7; }
+
+  .daytabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
+  .daytab {
+    flex: none; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft);
+    padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  .daytab[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 700; }
+
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar input[type="search"], .toolbar select {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--ink);
+    padding: 9px 12px; font-size: 14px;
+  }
+  .toolbar input[type="search"] { flex: 1 1 160px; min-width: 0; }
+  .btn {
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px;
+    padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.ghost { background: transparent; }
+  .btn.small { padding: 6px 10px; font-size: 12px; }
+  .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+
+  .list { list-style: none; margin: 0 0 24px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .item-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px;
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; box-shadow: var(--shadow);
+  }
+  .item-time {
+    font-family: "Shippori Mincho", serif; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700;
+    color: var(--ink); align-self: start; min-width: 64px;
+  }
+  .item-time small { display: block; font-family: "Zen Kaku Gothic New", sans-serif; font-size: 10px; font-weight: 500; color: var(--muted); }
+  .item-time.unset { font-size: 13px; color: var(--muted); font-weight: 500; padding-top: 4px; }
+  .item-body { min-width: 0; }
+  .item-row1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .item-place { font-weight: 700; font-size: 15px; }
+  .item-team { font-size: 12px; color: var(--muted); }
+  .item-summary { font-size: 12.5px; color: var(--ink-soft); margin-top: 3px; line-height: 1.6; }
+  .item-note { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .item-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  .pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+  .pill.pending { background: var(--pending-bg); color: var(--pending-fg); }
+  .pill.done { background: var(--done-bg); color: var(--done-fg); }
+  .item-actions { display: flex; gap: 6px; }
+
+  .empty-state { text-align: center; color: var(--muted); font-size: 13px; padding: 32px 12px; }
+
+  .logs { margin-bottom: 20px; }
+  .logs h2 { font-size: 15px; margin-bottom: 8px; }
+  .logs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .logs li { font-size: 12px; color: var(--ink-soft); background: var(--paper-2); border-radius: 10px; padding: 8px 10px; display: flex; justify-content: space-between; gap: 8px; }
+  .logs li span.t { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(16,22,15,0.5); backdrop-filter: blur(2px);
+    display: flex; align-items: flex-end; justify-content: center; z-index: 50; padding: 0;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal {
+    background: var(--paper); color: var(--ink); width: 100%; max-width: 560px;
+    border-radius: 20px 20px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow);
+  }
+  @media (min-width: 620px) {
+    .modal-backdrop { align-items: center; }
+    .modal { border-radius: 20px; max-height: 82vh; }
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .modal-head h2 { font-size: 18px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 5px; }
+  .field input[type="text"], .field input[type="time"], .field input[type="date"], .field input[type="number"], .field select, .field textarea {
+    width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--ink);
+    padding: 9px 11px; font-size: 14px; font-family: inherit;
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+  .qty-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: var(--paper-2); padding: 10px; border-radius: 12px; }
+  .qty-grid label { font-size: 10.5px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .qty-grid input { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+  .master-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .master-row:last-child { border-bottom: none; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .subhead { font-size: 13px; font-weight: 700; color: var(--ink-soft); margin: 18px 0 8px; }
+  .subhead:first-child { margin-top: 0; }
+  .helptext { font-size: 12px; color: var(--muted); line-height: 1.6; margin: -2px 0 10px; }
+  .boxcalc-out { font-size: 12px; color: var(--ink-soft); background: var(--paper-2); border-radius: 10px; padding: 8px 10px; margin-top: 8px; line-height: 1.7; }
+
+  .toast-stack { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast {
+    background: var(--ink); color: var(--paper); font-size: 13px; padding: 12px 14px; border-radius: 12px;
+    box-shadow: var(--shadow); max-width: 480px; margin: 0 auto; width: 100%;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a1 1 0 0 1 1 1v.6c3.4.5 6 3.4 6 6.9v3.6l1.6 2.4a1 1 0 0 1-.83 1.5H4.23a1 1 0 0 1-.83-1.5L5 14.1v-3.6c0-3.5 2.6-6.4 6-6.9V3a1 1 0 0 1 1-1Zm0 20a2.5 2.5 0 0 1-2.45-2h4.9A2.5 2.5 0 0 1 12 22Z"/></svg>
+      <h1>配膳お知らせ</h1>
+    </div>
+    <button class="icon-btn" id="settingsBtn" aria-label="設定を開く">⚙</button>
+  </header>
+
+  <div class="banner" id="permBanner" hidden>
+    <p id="permBannerText">通知を受け取るには、ホーム画面に追加したこのアプリで許可が必要です。</p>
+    <button id="enableNotifBtn">通知を有効にする</button>
+  </div>
+  <div class="banner info" id="installBanner" hidden>
+    <p id="installBannerText"></p>
+    <button id="installAppBtn" hidden>ホーム画面に追加</button>
+  </div>
+
+  <section class="hero" id="heroCard"></section>
+
+  <nav class="daytabs" id="dayTabs" aria-label="日程で絞り込み"></nav>
+
+  <div class="toolbar">
+    <input type="search" id="searchInput" placeholder="場所・チームで検索">
+    <select id="filterStatus">
+      <option value="all">すべて</option>
+      <option value="pending">発注済のみ</option>
+      <option value="done">配達完了のみ</option>
+    </select>
+    <button class="btn primary" id="addBtn">＋ 追加</button>
+  </div>
+
+  <ul class="list" id="scheduleList"></ul>
+
+  <section class="logs">
+    <h2>通知ログ</h2>
+    <ul id="logList"></ul>
+  </section>
+
+</div>
+
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>設定</h2><button class="icon-btn" data-close-modal="settingsModal" aria-label="閉じる">✕</button></div>
+
+    <div class="subhead">通知</div>
+    <div class="field">
+      <label for="notifyMinutesSel">何分前に知らせる？</label>
+      <select id="notifyMinutesSel">
+        <option value="5">5分前</option>
+        <option value="10">10分前</option>
+        <option value="15">15分前</option>
+        <option value="30">30分前</option>
+        <option value="60">1時間前</option>
+      </select>
+    </div>
+    <div class="field">
+      <p id="permStatusLine" class="helptext"></p>
+      <button class="btn" id="testNotifBtn">🔔 テスト通知を送る</button>
+    </div>
+
+    <div class="subhead">日程（実際の日付）</div>
+    <p class="helptext">「前日」「1日目」などのラベルに、実際のカレンダー日付を割り当ててください。日付が未設定の日程は、時間になっても自動通知されません。</p>
+    <div id="dateMasterList"></div>
+    <div class="field-row">
+      <input type="text" id="newDateLabel" placeholder="新しい日程名（例: 最終日）">
+      <button class="btn" id="addDateBtn">追加</button>
+    </div>
+
+    <div class="subhead">品目マスタ</div>
+    <div id="itemMasterList"></div>
+    <div class="field-row">
+      <input type="text" id="newItemLabel" placeholder="新しい品目名">
+      <button class="btn" id="addItemBtn">追加</button>
+    </div>
+
+    <div class="subhead">データ</div>
+    <button class="btn" id="resetStatusBtn">全件を「発注済」に戻す（翌年の使い回し用）</button>
+
+    <div class="modal-actions">
+      <button class="btn primary" data-close-modal="settingsModal">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="entryModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2 id="entryModalTitle">新規追加</h2><button class="icon-btn" data-close-modal="entryModal" aria-label="閉じる">✕</button></div>
+    <input type="hidden" id="fId">
+
+    <div class="field-row">
+      <div class="field">
+        <label for="fDate">月日・日程</label>
+        <select id="fDate"></select>
+      </div>
+      <div class="field">
+        <label for="fTime">設置時間</label>
+        <input type="time" id="fTime">
+        <label class="checkline" style="margin-top:6px;"><input type="checkbox" id="fUnset"> 時間未定</label>
+      </div>
+    </div>
+    <label class="checkline" style="margin: -6px 0 12px;"><input type="checkbox" id="fNextDay"> 日付をまたぐ（深夜0時台など、翌日として計算）</label>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="fTeam">チーム名</label>
+        <input type="text" id="fTeam" placeholder="例: 運営本部A">
+      </div>
+      <div class="field">
+        <label for="fPlace">配送場所</label>
+        <input type="text" id="fPlace" placeholder="例: 本部テント">
+      </div>
+    </div>
+
+    <div class="subhead">数量</div>
+    <div class="field-row" style="margin-bottom:8px;">
+      <div class="field" style="margin-bottom:0;">
+        <label for="boxUnitSize">1箱あたりの本数</label>
+        <input type="number" id="boxUnitSize" value="24" min="1">
+      </div>
+      <div class="field" style="margin-bottom:0; align-self:end;">
+        <button class="btn" id="calcBoxBtn" style="width:100%;">📦 箱数の目安を計算</button>
+      </div>
+    </div>
+    <div class="qty-grid" id="qtyGrid"></div>
+    <div class="boxcalc-out" id="boxcalcOut" hidden></div>
+
+    <div class="field" style="margin-top:12px;">
+      <label for="fNote">備考</label>
+      <input type="text" id="fNote" placeholder="例: 緑茶48本追加など">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" data-close-modal="entryModal">キャンセル</button>
+      <button class="btn danger" id="deleteEntryBtn" hidden>削除</button>
+      <button class="btn primary" id="saveEntryBtn">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- default data (from 2026配膳発注システム.xlsx) ---------- */
+const DEFAULT_DATE_MASTER = ["前日", "1日目", "2日目", "3日目"];
+
+const DEFAULT_ITEM_MASTER = [
+  { id: "aq2", label: "アクエリアス2L", type: "number" },
+  { id: "aq5", label: "アクエリアス500ml", type: "number" },
+  { id: "mu2", label: "麦茶2L", type: "number" },
+  { id: "mu5", label: "麦茶500ml", type: "number" },
+  { id: "w2", label: "水2L", type: "number" },
+  { id: "w5", label: "水500ml", type: "number" },
+  { id: "os", label: "OS-1", type: "number" },
+  { id: "cup", label: "紙コップ", type: "number" },
+  { id: "ref", label: "冷蔵/クーラー", type: "text" }
+];
+
+const DEFAULT_SCHEDULE = [{"id":1,"date":"前日","time":"14:00","nextDay":false,"team":"書籍Tシャツ","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":24,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":2,"date":"前日","time":"15:00","nextDay":false,"team":"東京アート","place":"在庫テント","aq2":2,"aq5":0,"mu2":2,"mu5":0,"w2":10,"w5":0,"os":5,"cup":100,"ref":"","note":"","status":"配達完了"},{"id":3,"date":"前日","time":"16:00","nextDay":false,"team":"受付","place":"在庫テント","aq2":2,"aq5":20,"mu2":2,"mu5":0,"w2":4,"w5":0,"os":5,"cup":200,"ref":"","note":"","status":"配達完了"},{"id":4,"date":"前日","time":"16:00","nextDay":false,"team":"ホテル","place":"在庫テント","aq2":0,"aq5":16,"mu2":0,"mu5":16,"w2":0,"w5":0,"os":20,"cup":0,"ref":"","note":"","status":"発注済"},{"id":5,"date":"前日","time":"16:30","nextDay":false,"team":"夜弁当","place":"あかしあ1-1","aq2":0,"aq5":0,"mu2":0,"mu5":72,"w2":0,"w5":72,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８","status":"配達完了"},{"id":6,"date":"前日","time":"16:30","nextDay":false,"team":"夜弁当","place":"楽屋口","aq2":0,"aq5":0,"mu2":0,"mu5":24,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"緑茶24　ほうじ茶24","status":"配達完了"},{"id":7,"date":"前日","time":"18:00","nextDay":false,"team":"東京映像","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":24,"w2":5,"w5":0,"os":24,"cup":0,"ref":"","note":"","status":"発注済"},{"id":8,"date":"前日","time":"19:00","nextDay":false,"team":"生活環境","place":"在庫テント","aq2":24,"aq5":24,"mu2":24,"mu5":24,"w2":24,"w5":24,"os":50,"cup":600,"ref":"","note":"","status":"発注済"},{"id":9,"date":"前日","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー男","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"〇","note":"クーラー","status":"配達完了"},{"id":10,"date":"前日","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー女","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"〇","note":"クーラー","status":"配達完了"},{"id":11,"date":"前日","time":"19:30","nextDay":false,"team":"入浴用","place":"浴室棟","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"〇","note":"クーラー","status":"配達完了"},{"id":12,"date":"前日","time":"20:00","nextDay":false,"team":"親研","place":"新研修棟","aq2":6,"aq5":48,"mu2":6,"mu5":48,"w2":6,"w5":48,"os":24,"cup":400,"ref":"","note":"緑茶24　ほうじ茶24お茶2L×6本、水310ml×30本","status":"配達完了"},{"id":13,"date":"前日","time":"20:00","nextDay":false,"team":"親研","place":"南講堂","aq2":12,"aq5":72,"mu2":12,"mu5":72,"w2":12,"w5":48,"os":24,"cup":600,"ref":"","note":"緑茶24　ほうじ茶24お茶2L×12本、水310ml×60本","status":"配達完了"},{"id":14,"date":"前日","time":"20:00","nextDay":false,"team":"フィールド","place":"在庫テント","aq2":20,"aq5":0,"mu2":6,"mu5":0,"w2":0,"w5":10,"os":100,"cup":400,"ref":"〇","note":"","status":"配達完了"},{"id":15,"date":"前日","time":"21:00","nextDay":false,"team":"会計","place":"在庫テント","aq2":0,"aq5":2,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":6,"cup":0,"ref":"","note":"","status":"発注済"},{"id":16,"date":"前日","time":"23:30","nextDay":false,"team":"熱中症対策","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":17,"date":"前日","time":"00:30","nextDay":true,"team":"アトラク","place":"南講堂","aq2":0,"aq5":24,"mu2":0,"mu5":48,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"前日深夜","status":"配達完了"},{"id":18,"date":"前日","time":null,"nextDay":false,"team":"劇","place":"在庫テント","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":9,"w5":48,"os":20,"cup":500,"ref":"","note":"板氷3 、クーラー2個は既に使用中","status":"配達完了"},{"id":19,"date":"前日","time":null,"nextDay":false,"team":"アトラク","place":"PJ棟1","aq2":0,"aq5":48,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":48,"cup":0,"ref":"","note":"OS-1ゼリー48、塩分タブレット","status":"配達完了"},{"id":20,"date":"前日","time":null,"nextDay":false,"team":"アシストAG","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":24,"cup":0,"ref":"","note":"","status":"発注済"},{"id":21,"date":"1日目","time":"06:00","nextDay":false,"team":"朝食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"麦茶500","status":"配達完了"},{"id":22,"date":"1日目","time":"07:00","nextDay":false,"team":"フィールド","place":"PJ棟４","aq2":0,"aq5":140,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"冷蔵希望","status":"配達完了"},{"id":23,"date":"1日目","time":"08:30","nextDay":false,"team":"アトラク","place":"大講堂","aq2":0,"aq5":96,"mu2":0,"mu5":0,"w2":0,"w5":24,"os":0,"cup":0,"ref":"〇","note":"冷蔵希望","status":"配達完了"},{"id":24,"date":"1日目","time":"09:00","nextDay":false,"team":"大講堂誘導","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":26,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":25,"date":"1日目","time":"09:00","nextDay":false,"team":"昼食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":216,"w2":0,"w5":216,"os":0,"cup":0,"ref":"","note":"緑茶216　ほうじ茶216　9箱ずつ","status":"配達完了"},{"id":26,"date":"1日目","time":"09:00","nextDay":false,"team":"昼食用","place":"楽屋","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８2箱ずつ","status":"配達完了"},{"id":27,"date":"1日目","time":"09:30","nextDay":false,"team":"医療班","place":"在庫テント","aq2":3,"aq5":10,"mu2":5,"mu5":0,"w2":20,"w5":0,"os":30,"cup":300,"ref":"","note":"","status":"配達完了"},{"id":28,"date":"1日目","time":"09:30","nextDay":false,"team":"野外誘導","place":"在庫テント","aq2":0,"aq5":20,"mu2":0,"mu5":30,"w2":0,"w5":30,"os":3,"cup":30,"ref":"","note":"板氷4本　クーラーに2本ずつ入れる","status":"配達完了"},{"id":29,"date":"1日目","time":"11:00","nextDay":false,"team":"青年運営","place":"在庫テント","aq2":8,"aq5":0,"mu2":8,"mu5":0,"w2":8,"w5":0,"os":0,"cup":1200,"ref":"","note":"","status":"配達完了"},{"id":30,"date":"1日目","time":"15:00","nextDay":false,"team":"親研","place":"南講堂","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"板氷2本","status":"配達完了"},{"id":31,"date":"1日目","time":"15:00","nextDay":false,"team":"アトラク","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":24,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アク300ml×48　冷蔵希望","status":"配達完了"},{"id":32,"date":"1日目","time":"15:30","nextDay":false,"team":"検食","place":"あかしあ2-1","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８　　2箱ずつ","status":"配達完了"},{"id":33,"date":"1日目","time":"16:00","nextDay":false,"team":"夕食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":336,"w2":0,"w5":336,"os":0,"cup":0,"ref":"","note":"緑茶336　ほうじ茶336　14箱ずつ","status":"配達完了"},{"id":34,"date":"1日目","time":"16:00","nextDay":false,"team":"夕食用","place":"楽屋","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８2箱ずつ","status":"配達完了"},{"id":35,"date":"1日目","time":"16:00","nextDay":false,"team":"夕食用","place":"新研修棟","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶24　ほうじ茶24　全6箱","status":"配達完了"},{"id":36,"date":"1日目","time":"16:00","nextDay":false,"team":"夕食用","place":"南講堂","aq2":0,"aq5":0,"mu2":0,"mu5":72,"w2":0,"w5":72,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８全10箱","status":"配達完了"},{"id":37,"date":"1日目","time":"19:00","nextDay":false,"team":"アトラク","place":"PJ棟1","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":24,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":38,"date":"1日目","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー男","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":39,"date":"1日目","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー女","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":40,"date":"1日目","time":"19:30","nextDay":false,"team":"入浴用","place":"浴室棟","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":41,"date":"1日目","time":"21:00","nextDay":false,"team":"ホテル担当","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"緑茶24　ほうじ茶24　全5箱","status":"配達完了"},{"id":42,"date":"1日目","time":"22:00","nextDay":false,"team":"フィールド","place":"在庫テント","aq2":0,"aq5":90,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"板氷2","status":"発注済"},{"id":43,"date":"1日目","time":"22:30","nextDay":false,"team":"アトラク","place":"南講堂","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"アクエリ300：24","status":"配達完了"},{"id":44,"date":"2日目","time":"06:00","nextDay":false,"team":"朝食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"","status":"発注済"},{"id":45,"date":"2日目","time":"07:30","nextDay":false,"team":"アトラク","place":"PJ棟２","aq2":0,"aq5":48,"mu2":0,"mu5":24,"w2":0,"w5":24,"os":0,"cup":0,"ref":"〇","note":"","status":"配達完了"},{"id":46,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"配膳テント","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":47,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"憩いの広場","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":48,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"祈念館入口","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":49,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"大階段下","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":50,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"藤棚","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":51,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"農園","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":52,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"南遊歩道","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":53,"date":"2日目","time":"08:00","nextDay":false,"team":"智慧の練磨","place":"南講堂バス停","aq2":18,"aq5":0,"mu2":18,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":54,"date":"2日目","time":"08:00","nextDay":false,"team":"クールバス","place":"大階段下のバス","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":0,"w5":0,"os":0,"cup":400,"ref":"〇","note":"番重、ゴミ袋、看板、ビニ手、紙タオル、塩飴","status":"配達完了"},{"id":55,"date":"2日目","time":"08:30","nextDay":false,"team":"親研","place":"南講堂","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":56,"date":"2日目","time":"10:30","nextDay":false,"team":"昼食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":432,"w2":0,"w5":432,"os":0,"cup":0,"ref":"","note":"緑茶432　18箱ずつ","status":"配達完了"},{"id":57,"date":"2日目","time":"10:30","nextDay":false,"team":"昼食用","place":"楽屋","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶48　2箱ずつ","status":"配達完了"},{"id":58,"date":"2日目","time":"13:00","nextDay":false,"team":"アトラク","place":"大講堂東口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"配達完了"},{"id":59,"date":"2日目","time":"13:00","nextDay":false,"team":"アトラク","place":"大講堂西口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"配達完了"},{"id":60,"date":"2日目","time":"16:00","nextDay":false,"team":"夕食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":336,"w2":0,"w5":336,"os":0,"cup":0,"ref":"","note":"緑茶336　ほうじ茶336　14箱ずつ","status":"配達完了"},{"id":61,"date":"2日目","time":"16:00","nextDay":false,"team":"夕食用","place":"楽屋","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"緑茶４８　ほうじ茶４８　　2箱ずつ","status":"配達完了"},{"id":62,"date":"2日目","time":"18:30","nextDay":false,"team":"アトラク","place":"大講堂東口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"配達完了"},{"id":63,"date":"2日目","time":"18:30","nextDay":false,"team":"アトラク","place":"大講堂西口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"配達完了"},{"id":64,"date":"2日目","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー男","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":65,"date":"2日目","time":"19:30","nextDay":false,"team":"入浴用","place":"シャワー女","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":66,"date":"2日目","time":"19:30","nextDay":false,"team":"入浴用","place":"浴室棟","aq2":6,"aq5":0,"mu2":6,"mu5":0,"w2":6,"w5":0,"os":0,"cup":400,"ref":"","note":"","status":"配達完了"},{"id":67,"date":"2日目","time":"21:00","nextDay":false,"team":"ホテル担当","place":"在庫テント","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"全5箱","status":"発注済"},{"id":68,"date":"2日目","time":"22:00","nextDay":false,"team":"アトラク","place":"南講堂","aq2":0,"aq5":0,"mu2":0,"mu5":24,"w2":0,"w5":24,"os":0,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":69,"date":"2日目","time":null,"nextDay":false,"team":"フィールド","place":"在庫テント","aq2":10,"aq5":140,"mu2":3,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"板氷7","status":"発注済"},{"id":70,"date":"3日目","time":"06:00","nextDay":false,"team":"朝食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"","note":"","status":"配達完了"},{"id":71,"date":"3日目","time":"07:30","nextDay":false,"team":"アトラク","place":"PJ棟２","aq2":0,"aq5":48,"mu2":0,"mu5":0,"w2":0,"w5":24,"os":0,"cup":0,"ref":"〇","note":"冷蔵希望","status":"配達完了"},{"id":72,"date":"3日目","time":"10:00","nextDay":false,"team":"アトラク","place":"大講堂東口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵、板氷1","status":"配達完了"},{"id":73,"date":"3日目","time":"10:00","nextDay":false,"team":"アトラク","place":"大講堂西口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×49本　冷蔵、板氷1","status":"配達完了"},{"id":74,"date":"3日目","time":"10:30","nextDay":false,"team":"昼食用","place":"配膳テント","aq2":0,"aq5":0,"mu2":0,"mu5":432,"w2":0,"w5":432,"os":0,"cup":0,"ref":"","note":"18箱ずつ","status":"配達完了"},{"id":75,"date":"3日目","time":"10:30","nextDay":false,"team":"昼食用","place":"楽屋","aq2":0,"aq5":0,"mu2":0,"mu5":48,"w2":0,"w5":48,"os":0,"cup":0,"ref":"","note":"2箱ずつ","status":"配達完了"},{"id":76,"date":"3日目","time":"11:30","nextDay":false,"team":"アトラク","place":"大講堂東口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"発注済"},{"id":77,"date":"3日目","time":"11:30","nextDay":false,"team":"アトラク","place":"大講堂西口","aq2":0,"aq5":0,"mu2":0,"mu5":0,"w2":0,"w5":0,"os":0,"cup":0,"ref":"〇","note":"アクエリ300ml×48本　冷蔵","status":"発注済"}];
+
+/* ---------- state ---------- */
+const STORAGE_KEY = "haizenOshirase.v1";
+
+function defaultState(){
+  const dayDates = {};
+  DEFAULT_DATE_MASTER.forEach(d => dayDates[d] = "");
+  return {
+    dateMaster: DEFAULT_DATE_MASTER.slice(),
+    itemMaster: DEFAULT_ITEM_MASTER.map(i => ({...i})),
+    scheduleData: DEFAULT_SCHEDULE.map(i => ({...i})),
+    dayDates,
+    notifyMinutes: 10,
+    notifiedKeys: [],
+    logs: [],
+    nextId: DEFAULT_SCHEDULE.length + 1
+  };
+}
+
+let state = loadState();
+
+function loadState(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    const base = defaultState();
+    return Object.assign(base, parsed);
+  } catch (e) {
+    return defaultState();
+  }
+}
+
+function saveState(){
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+/* ---------- helpers ---------- */
+function escapeHtml(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+function pad2(n){ return String(n).padStart(2, "0"); }
+
+function getItemDateTime(item){
+  if (!item.time) return null;
+  const iso = state.dayDates[item.date];
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const [hh, mm] = item.time.split(":").map(Number);
+  if (!y || !m || !d || isNaN(hh) || isNaN(mm)) return null;
+  let dt = new Date(y, m - 1, d, hh, mm, 0, 0);
+  if (item.nextDay) dt = new Date(dt.getTime() + 24 * 60 * 60 * 1000);
+  return dt;
+}
+
+function formatQtySummary(item){
+  const parts = [];
+  state.itemMaster.forEach(m => {
+    const v = item[m.id];
+    if (v === undefined || v === null || v === "" || v === 0 || v === "0") return;
+    parts.push(escapeHtml(m.label) + " " + escapeHtml(v));
+  });
+  return parts.length ? parts.join(" / ") : "特記の数量なし";
+}
+
+function addLog(text){
+  const now = new Date();
+  state.logs.unshift({ text, t: pad2(now.getHours()) + ":" + pad2(now.getMinutes()) });
+  state.logs = state.logs.slice(0, 60);
+  saveState();
+  renderLogs();
+}
+
+function toast(msg){
+  const stack = document.getElementById("toastStack");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 320); }, 3400);
+}
+
+/* ---------- notifications ---------- */
+let swReady = null;
+function initServiceWorker(){
+  if (!("serviceWorker" in navigator)) return;
+  swReady = navigator.serviceWorker.register("./sw.js").catch(() => null);
+}
+
+function notificationsSupported(){
+  return "Notification" in window;
+}
+
+async function showAppNotification(title, body, tag){
+  if (!notificationsSupported() || Notification.permission !== "granted") return false;
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        await reg.showNotification(title, {
+          body, tag, icon: "./icons/icon-192.png", badge: "./icons/icon-192.png",
+          vibrate: [80, 40, 80]
+        });
+        return true;
+      }
+    }
+    new Notification(title, { body, tag });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isAndroid = /Android/.test(navigator.userAgent);
+let deferredInstallPrompt = null;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  updatePermissionUI();
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  updatePermissionUI();
+  toast("ホーム画面に追加しました");
+});
+
+document.getElementById("installAppBtn").addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  updatePermissionUI();
+});
+
+function updatePermissionUI(){
+  const banner = document.getElementById("permBanner");
+  const line = document.getElementById("permStatusLine");
+  const supported = notificationsSupported();
+  const standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  const installBanner = document.getElementById("installBanner");
+  const installBannerText = document.getElementById("installBannerText");
+  const installAppBtn = document.getElementById("installAppBtn");
+
+  if (isIOS && !standalone) {
+    installBanner.hidden = false;
+    installBannerText.innerHTML = 'iPhoneでは、共有ボタン →「ホーム画面に追加」からこのアプリを追加し、<strong>ホーム画面のアイコンから開いた状態</strong>でないと通知は使えません。';
+    installAppBtn.hidden = true;
+  } else if (isAndroid && !standalone) {
+    installBanner.hidden = false;
+    installBannerText.textContent = "ホーム画面に追加すると、バックグラウンドでも通知が届きやすくなります。";
+    installAppBtn.hidden = !deferredInstallPrompt;
+  } else {
+    installBanner.hidden = true;
+  }
+
+  if (!supported) {
+    banner.hidden = true;
+    if (line) line.textContent = "この端末・ブラウザは通知に対応していません。";
+    return;
+  }
+  if (Notification.permission === "granted") {
+    banner.hidden = true;
+    if (line) line.textContent = "通知: 許可済みです ✅";
+  } else if (Notification.permission === "denied") {
+    banner.hidden = true;
+    if (line) line.textContent = "通知がブロックされています。端末の設定アプリから許可してください。";
+  } else {
+    banner.hidden = false;
+    if (line) line.textContent = "通知: 未許可です。上の「通知を有効にする」ボタンから許可してください。";
+  }
+}
+
+async function requestPermission(){
+  if (!notificationsSupported()) { toast("この端末は通知に対応していません"); return; }
+  try {
+    const res = await Notification.requestPermission();
+    updatePermissionUI();
+    if (res === "granted") { toast("🔔 通知を有効にしました"); addLog("システム: 通知の許可を取得しました。"); checkSchedule(); }
+  } catch (e) {}
+}
+
+const CATCHUP_WINDOW_MIN = -90; // fire for items up to 90min overdue when app re-opens
+
+function checkSchedule(){
+  if (!notificationsSupported() || Notification.permission !== "granted") return;
+  const now = new Date();
+  let changed = false;
+  state.scheduleData.forEach(item => {
+    if (item.status !== "発注済") return;
+    const dt = getItemDateTime(item);
+    if (!dt) return;
+    const diffMin = (dt.getTime() - now.getTime()) / 60000;
+    const key = "pre-" + item.id;
+    if (diffMin <= state.notifyMinutes && diffMin > CATCHUP_WINDOW_MIN && !state.notifiedKeys.includes(key)) {
+      const label = diffMin <= 0 ? "設置時刻です" : Math.round(diffMin) + "分前";
+      showAppNotification(
+        "⏰ " + label,
+        (item.time || "") + " " + item.place + "（" + item.team + "）",
+        key
+      );
+      addLog("⏰【" + label + "】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
+      state.notifiedKeys.push(key);
+      changed = true;
+    }
+  });
+  if (changed) saveState();
+}
+
+setInterval(checkSchedule, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkSchedule(); });
+window.addEventListener("focus", checkSchedule);
+
+/* ---------- rendering ---------- */
+let currentDayFilter = "all";
+
+function renderDayTabs(){
+  const nav = document.getElementById("dayTabs");
+  nav.innerHTML = "";
+  const mk = (label, value) => {
+    const b = document.createElement("button");
+    b.className = "daytab";
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String(currentDayFilter === value));
+    b.addEventListener("click", () => { currentDayFilter = value; renderDayTabs(); renderList(); });
+    return b;
+  };
+  nav.appendChild(mk("すべて", "all"));
+  state.dateMaster.forEach(d => nav.appendChild(mk(d, d)));
+}
+
+function renderHero(){
+  const hero = document.getElementById("heroCard");
+  const now = new Date();
+  let best = null, bestDt = null;
+  state.scheduleData.forEach(item => {
+    if (item.status !== "発注済") return;
+    const dt = getItemDateTime(item);
+    if (!dt) return;
+    if (dt.getTime() < now.getTime() - 5 * 60000) return;
+    if (!bestDt || dt < bestDt) { bestDt = dt; best = item; }
+  });
+
+  if (!best) {
+    hero.innerHTML =
+      '<div class="hero-eyebrow">次の配膳予定</div>' +
+      '<div class="hero-empty">直近の予定はありません。日程の日付が未設定か、すべて配達完了です。⚙設定から日付を確認してください。</div>';
+    return;
+  }
+
+  const diffMs = bestDt.getTime() - now.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  let countLabel;
+  if (diffMin <= 0) countLabel = "まもなく設置時刻";
+  else if (diffMin < 60) countLabel = diffMin + "分後";
+  else countLabel = Math.floor(diffMin / 60) + "時間" + (diffMin % 60) + "分後";
+
+  hero.innerHTML =
+    '<div class="hero-eyebrow">次の配膳予定</div>' +
+    '<div class="hero-title">' + escapeHtml(best.place) + '（' + escapeHtml(best.team) + '）</div>' +
+    '<div class="hero-sub">' + escapeHtml(best.date) + ' ' + escapeHtml(best.time) + (best.nextDay ? "（翌日）" : "") + " ・ " + state.notifyMinutes + "分前に通知します" + '</div>' +
+    '<div class="hero-count">' + countLabel + '</div>';
+}
+
+function renderList(){
+  const ul = document.getElementById("scheduleList");
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const statusFilter = document.getElementById("filterStatus").value;
+
+  let items = state.scheduleData.filter(item => {
+    if (currentDayFilter !== "all" && item.date !== currentDayFilter) return false;
+    if (statusFilter === "pending" && item.status !== "発注済") return false;
+    if (statusFilter === "done" && item.status !== "配達完了") return false;
+    if (q) {
+      const hay = (item.place + " " + item.team + " " + item.date + " " + (item.note || "")).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  items.sort((a, b) => {
+    const di = state.dateMaster.indexOf(a.date) - state.dateMaster.indexOf(b.date);
+    if (di !== 0) return di;
+    if (!a.time && !b.time) return 0;
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
+
+  ul.innerHTML = "";
+  if (!items.length) {
+    ul.innerHTML = '<li class="empty-state">該当する予定がありません。</li>';
+    return;
+  }
+
+  items.forEach(item => {
+    const li = document.createElement("li");
+    li.className = "item-card";
+    const timeHtml = item.time
+      ? '<div class="item-time">' + escapeHtml(item.time) + (item.nextDay ? '<small>翌日</small>' : '') + '</div>'
+      : '<div class="item-time unset">時間未定</div>';
+    const pillClass = item.status === "配達完了" ? "done" : "pending";
+
+    li.innerHTML =
+      timeHtml +
+      '<div class="item-body">' +
+        '<div class="item-row1"><span class="item-place">' + escapeHtml(item.place) + '</span><span class="item-team">' + escapeHtml(item.team) + '・' + escapeHtml(item.date) + '</span></div>' +
+        '<div class="item-summary">' + formatQtySummary(item) + '</div>' +
+        (item.note ? '<div class="item-note">📝 ' + escapeHtml(item.note) + '</div>' : '') +
+        '<div class="item-foot">' +
+          '<span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' +
+          '<div class="item-actions">' +
+            '<button class="btn small" data-act="toggle" data-id="' + item.id + '">' + (item.status === "発注済" ? "完了にする" : "未完了に戻す") + '</button>' +
+            '<button class="btn small ghost" data-act="edit" data-id="' + item.id + '">編集</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    ul.appendChild(li);
+  });
+}
+
+function renderLogs(){
+  const ul = document.getElementById("logList");
+  ul.innerHTML = "";
+  if (!state.logs.length) {
+    ul.innerHTML = '<li style="color:var(--muted); justify-content:center;">まだ通知履歴はありません。</li>';
+    return;
+  }
+  state.logs.forEach(l => {
+    const li = document.createElement("li");
+    li.innerHTML = '<span>' + escapeHtml(l.text) + '</span><span class="t">' + escapeHtml(l.t) + '</span>';
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById("scheduleList").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const item = state.scheduleData.find(i => i.id === id);
+  if (!item) return;
+  if (btn.dataset.act === "toggle") {
+    item.status = item.status === "発注済" ? "配達完了" : "発注済";
+    saveState();
+    if (item.status === "配達完了") {
+      showAppNotification("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）", "done-" + item.id + "-" + Date.now());
+      addLog("✅【配達完了】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
+      toast("✅ 配達完了として記録し、通知を送りました");
+    } else {
+      addLog("↩【差し戻し】" + item.date + " " + item.place + "（" + item.team + "）を発注済に戻しました。");
+    }
+    renderHero(); renderList();
+  } else if (btn.dataset.act === "edit") {
+    openEntryModal(item);
+  }
+});
+
+document.getElementById("searchInput").addEventListener("input", renderList);
+document.getElementById("filterStatus").addEventListener("change", renderList);
+
+/* ---------- settings modal ---------- */
+function openModal(id){ document.getElementById(id).hidden = false; }
+function closeModal(id){ document.getElementById(id).hidden = true; }
+document.querySelectorAll("[data-close-modal]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.closeModal)));
+document.querySelectorAll(".modal-backdrop").forEach(bd => bd.addEventListener("click", (e) => { if (e.target === bd) bd.hidden = true; }));
+
+document.getElementById("settingsBtn").addEventListener("click", () => { renderSettingsModal(); openModal("settingsModal"); });
+document.getElementById("enableNotifBtn").addEventListener("click", requestPermission);
+document.getElementById("testNotifBtn").addEventListener("click", async () => {
+  if (Notification.permission !== "granted") { await requestPermission(); }
+  if (Notification.permission === "granted") {
+    await showAppNotification("🔔 テスト通知", "この通知が見えていればOKです。", "test-" + Date.now());
+    addLog("システム: テスト通知を送信しました。");
+  }
+});
+document.getElementById("notifyMinutesSel").addEventListener("change", (e) => {
+  state.notifyMinutes = Number(e.target.value);
+  saveState();
+  toast("通知タイミングを" + state.notifyMinutes + "分前に変更しました");
+  renderHero();
+});
+document.getElementById("resetStatusBtn").addEventListener("click", () => {
+  if (!confirm("すべての予定を「発注済」に戻し、通知履歴をリセットします。よろしいですか？")) return;
+  state.scheduleData.forEach(i => i.status = "発注済");
+  state.notifiedKeys = [];
+  saveState();
+  renderAll();
+  toast("全件を発注済に戻しました");
+});
+document.getElementById("addDateBtn").addEventListener("click", () => {
+  const input = document.getElementById("newDateLabel");
+  const v = input.value.trim();
+  if (!v) return;
+  if (state.dateMaster.includes(v)) { toast("すでに同じ日程があります"); return; }
+  state.dateMaster.push(v);
+  state.dayDates[v] = "";
+  input.value = "";
+  saveState();
+  renderSettingsModal(); renderDayTabs(); renderAll();
+});
+document.getElementById("addItemBtn").addEventListener("click", () => {
+  const input = document.getElementById("newItemLabel");
+  const v = input.value.trim();
+  if (!v) return;
+  const id = "item_" + Math.random().toString(36).slice(2, 8);
+  state.itemMaster.push({ id, label: v, type: "number" });
+  input.value = "";
+  saveState();
+  renderSettingsModal();
+});
+
+function renderSettingsModal(){
+  document.getElementById("notifyMinutesSel").value = String(state.notifyMinutes);
+  updatePermissionUI();
+
+  const dateList = document.getElementById("dateMasterList");
+  dateList.innerHTML = "";
+  state.dateMaster.forEach(label => {
+    const row = document.createElement("div");
+    row.className = "master-row";
+    row.innerHTML =
+      '<span>' + escapeHtml(label) + '</span>' +
+      '<input type="date" value="' + escapeHtml(state.dayDates[label] || "") + '" data-date-for="' + escapeHtml(label) + '" style="max-width:160px;">';
+    dateList.appendChild(row);
+  });
+  dateList.querySelectorAll("input[data-date-for]").forEach(inp => {
+    inp.addEventListener("change", () => {
+      state.dayDates[inp.dataset.dateFor] = inp.value;
+      saveState();
+      renderAll();
+    });
+  });
+
+  const itemList = document.getElementById("itemMasterList");
+  itemList.innerHTML = "";
+  state.itemMaster.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "master-row";
+    row.innerHTML = '<span>' + escapeHtml(m.label) + ' <span style="color:var(--muted); font-size:11px;">(' + (m.type === "number" ? "数量" : "テキスト") + ')</span></span>' +
+      '<button class="btn small danger" data-del-item="' + m.id + '">削除</button>';
+    itemList.appendChild(row);
+  });
+  itemList.querySelectorAll("[data-del-item]").forEach(b => {
+    b.addEventListener("click", () => {
+      state.itemMaster = state.itemMaster.filter(m => m.id !== b.dataset.delItem);
+      saveState();
+      renderSettingsModal();
+    });
+  });
+}
+
+/* ---------- entry modal (add / edit) ---------- */
+function renderDateSelect(){
+  const sel = document.getElementById("fDate");
+  sel.innerHTML = "";
+  state.dateMaster.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d; opt.textContent = d;
+    sel.appendChild(opt);
+  });
+}
+
+function renderQtyGrid(item){
+  const grid = document.getElementById("qtyGrid");
+  grid.innerHTML = "";
+  state.itemMaster.forEach(m => {
+    const wrap = document.createElement("div");
+    const val = item ? (item[m.id] ?? (m.type === "number" ? 0 : "")) : (m.type === "number" ? 0 : "");
+    wrap.innerHTML = '<label>' + escapeHtml(m.label) + '</label><input type="' + (m.type === "number" ? "number" : "text") + '" id="qty_' + m.id + '" value="' + escapeHtml(val) + '" ' + (m.type === "number" ? 'min="0"' : '') + '>';
+    grid.appendChild(wrap);
+  });
+  document.getElementById("boxcalcOut").hidden = true;
+}
+
+document.getElementById("calcBoxBtn").addEventListener("click", () => {
+  const unit = Math.max(1, Number(document.getElementById("boxUnitSize").value) || 24);
+  const out = document.getElementById("boxcalcOut");
+  const lines = [];
+  state.itemMaster.forEach(m => {
+    if (m.type !== "number") return;
+    const el = document.getElementById("qty_" + m.id);
+    if (!el) return;
+    const v = Number(el.value) || 0;
+    if (v > 0) lines.push(escapeHtml(m.label) + ": " + v + "本 → 約" + Math.ceil(v / unit) + "箱");
+  });
+  if (!lines.length) { out.hidden = true; toast("数量が入力されていません"); return; }
+  out.innerHTML = lines.join("<br>");
+  out.hidden = false;
+});
+
+function openEntryModal(item){
+  renderDateSelect();
+  document.getElementById("entryModalTitle").textContent = item ? "予定の編集" : "新規追加";
+  document.getElementById("fId").value = item ? item.id : "";
+  document.getElementById("fDate").value = item ? item.date : (state.dateMaster[0] || "");
+  document.getElementById("fTime").value = item && item.time ? item.time : "14:00";
+  document.getElementById("fUnset").checked = !!(item && !item.time);
+  document.getElementById("fTime").disabled = document.getElementById("fUnset").checked;
+  document.getElementById("fNextDay").checked = !!(item && item.nextDay);
+  document.getElementById("fTeam").value = item ? item.team : "";
+  document.getElementById("fPlace").value = item ? item.place : "";
+  document.getElementById("fNote").value = item ? (item.note || "") : "";
+  renderQtyGrid(item);
+  document.getElementById("deleteEntryBtn").hidden = !item;
+  openModal("entryModal");
+}
+
+document.getElementById("addBtn").addEventListener("click", () => openEntryModal(null));
+document.getElementById("fUnset").addEventListener("change", (e) => { document.getElementById("fTime").disabled = e.target.checked; });
+
+document.getElementById("saveEntryBtn").addEventListener("click", () => {
+  const idRaw = document.getElementById("fId").value;
+  const date = document.getElementById("fDate").value;
+  const unset = document.getElementById("fUnset").checked;
+  const time = unset ? null : document.getElementById("fTime").value;
+  const nextDay = document.getElementById("fNextDay").checked;
+  const team = document.getElementById("fTeam").value.trim();
+  const place = document.getElementById("fPlace").value.trim();
+  const note = document.getElementById("fNote").value.trim();
+
+  if (!team || !place || (!unset && !time)) { toast("チーム名・配送場所・設置時間は必須です"); return; }
+
+  const qty = {};
+  state.itemMaster.forEach(m => {
+    const el = document.getElementById("qty_" + m.id);
+    qty[m.id] = m.type === "number" ? (Number(el.value) || 0) : el.value;
+  });
+
+  if (idRaw) {
+    const item = state.scheduleData.find(i => i.id === Number(idRaw));
+    Object.assign(item, { date, time, nextDay, team, place, note }, qty);
+    addLog("✏️【編集】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
+    toast("更新しました");
+  } else {
+    const item = Object.assign({ id: state.nextId++, date, time, nextDay, team, place, note, status: "発注済" }, qty);
+    state.scheduleData.push(item);
+    addLog("＋【新規追加】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
+    toast("追加しました");
+  }
+  saveState();
+  closeModal("entryModal");
+  renderAll();
+});
+
+document.getElementById("deleteEntryBtn").addEventListener("click", () => {
+  const id = Number(document.getElementById("fId").value);
+  const item = state.scheduleData.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm(item.date + " " + (item.time || "") + " " + item.place + " を削除しますか？")) return;
+  state.scheduleData = state.scheduleData.filter(i => i.id !== id);
+  saveState();
+  closeModal("entryModal");
+  renderAll();
+  toast("削除しました");
+});
+
+/* ---------- boot ---------- */
+function renderAll(){
+  renderHero();
+  renderDayTabs();
+  renderList();
+  renderLogs();
+  updatePermissionUI();
+}
+
+initServiceWorker();
+renderAll();
+checkSchedule();
+setInterval(renderHero, 30000);
+
+if (notificationsSupported() && Notification.permission === "default") {
+  // banner already prompts; nothing extra needed here.
+}
+
+})();
+</script>
+</body>
+</html>
