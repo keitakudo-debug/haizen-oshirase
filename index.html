@@ -332,7 +332,8 @@
         <label class="checkline" style="margin-top:6px;"><input type="checkbox" id="fUnset"> 時間未定</label>
       </div>
     </div>
-    <label class="checkline" style="margin: -6px 0 12px;"><input type="checkbox" id="fNextDay"> 日付をまたぐ（深夜0時台など、翌日として計算）</label>
+    <label class="checkline" style="margin: -6px 0 8px;"><input type="checkbox" id="fNextDay"> 日付をまたぐ（深夜0時台など、翌日として計算）</label>
+    <div class="helptext" id="entryPreview" style="margin-bottom:12px;"></div>
 
     <div class="field-row">
       <div class="field">
@@ -888,6 +889,40 @@ document.getElementById("calcBoxBtn").addEventListener("click", () => {
   out.hidden = false;
 });
 
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+function updateEntryPreview(){
+  const out = document.getElementById("entryPreview");
+  const date = document.getElementById("fDate").value;
+  const unset = document.getElementById("fUnset").checked;
+  const time = document.getElementById("fTime").value;
+  const nextDay = document.getElementById("fNextDay").checked;
+
+  if (unset) {
+    out.textContent = "→ 時間未定のため、自動通知はされません（配達完了の通知は届きます）。";
+    return;
+  }
+  const iso = state.dayDates[date];
+  if (!iso) {
+    out.textContent = "→ 「" + date + "」の実際の日付が未設定です。⚙設定で日付を入れないと自動通知されません。";
+    return;
+  }
+  const dt = (function(){
+    const [y, m, d] = iso.split("-").map(Number);
+    const [hh, mm] = (time || "00:00").split(":").map(Number);
+    let dd = new Date(y, m - 1, d, hh, mm, 0, 0);
+    if (nextDay) dd = new Date(dd.getTime() + 24 * 60 * 60 * 1000);
+    return dd;
+  })();
+  const label = dt.getFullYear() + "年" + (dt.getMonth() + 1) + "月" + dt.getDate() + "日(" + WEEKDAY_JA[dt.getDay()] + ") " + pad2(dt.getHours()) + ":" + pad2(dt.getMinutes());
+  out.textContent = "→ 実際の通知予定: " + label + (nextDay ? "（「日付をまたぐ」により+1日）" : "");
+}
+
+["fDate", "fTime", "fUnset", "fNextDay"].forEach(id => {
+  document.getElementById(id).addEventListener("change", updateEntryPreview);
+  document.getElementById(id).addEventListener("input", updateEntryPreview);
+});
+
 function openEntryModal(item){
   renderDateSelect();
   document.getElementById("entryModalTitle").textContent = item ? "予定の編集" : "新規追加";
@@ -902,6 +937,7 @@ function openEntryModal(item){
   document.getElementById("fNote").value = item ? (item.note || "") : "";
   renderQtyGrid(item);
   document.getElementById("deleteEntryBtn").hidden = !item;
+  updateEntryPreview();
   openModal("entryModal");
 }
 
