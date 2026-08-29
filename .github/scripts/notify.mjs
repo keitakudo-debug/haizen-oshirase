@@ -1,6 +1,9 @@
 // GitHub Actions から5分おきに実行される通知チェック。
 // notify-config.json の予定を見て、指定分数前になったものを
-// GitHubのIssueコメントとして投稿する（GitHubモバイルアプリがプッシュ通知してくれる）。
+// 1) ntfy.sh 経由でスマホへプッシュ通知（実際の通知はこちら）
+// 2) GitHubのIssueコメントとしても記録（履歴閲覧用。ボット投稿はGitHub側の
+//    通知は発生しないため、プッシュ通知としては機能しない点に注意）
+// する。
 
 import { readFile, writeFile } from 'node:fs/promises';
 
@@ -11,6 +14,7 @@ const TRACKER_TITLE = '配膳お知らせ通知';
 
 const [OWNER, REPO] = (process.env.GITHUB_REPOSITORY || '').split('/');
 const TOKEN = process.env.GITHUB_TOKEN;
+const NTFY_TOPIC = process.env.NTFY_TOPIC;
 
 function itemDueAtUtcMs(iso, time, nextDay) {
   if (!iso || !time) return null;
@@ -37,6 +41,23 @@ async function gh(path, options = {}) {
     throw new Error(`GitHub API ${options.method || 'GET'} ${path} failed: ${res.status} ${await res.text()}`);
   }
   return res.status === 204 ? null : res.json();
+}
+
+async function sendNtfy(title, body) {
+  if (!NTFY_TOPIC) {
+    console.log('NTFY_TOPIC is not set; skipping push notification.');
+    return;
+  }
+  // HTTPヘッダーは非ASCII文字を安全に送れないため、タイトルも本文に含める
+  // （Titleヘッダーには日本語を使わない）。
+  const res = await fetch(`https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`, {
+    method: 'POST',
+    headers: { Priority: 'high' },
+    body: `${title}\n${body}`,
+  });
+  if (!res.ok) {
+    console.error(`ntfy push failed: ${res.status} ${await res.text()}`);
+  }
 }
 
 async function findOrCreateTrackerIssue() {
@@ -94,6 +115,9 @@ async function main() {
       `${item.time || ''} ${item.place}（${item.team}）`,
     ];
     if (item.note) lines.push(`📝 ${item.note}`);
+
+    await sendNtfy(`⏰ ${label}`, `${item.time || ''} ${item.place}（${item.team}）` + (item.note ? `\n📝 ${item.note}` : ''));
+
     await gh(`/repos/${OWNER}/${REPO}/issues/${issueNumber}/comments`, {
       method: 'POST',
       body: JSON.stringify({ body: lines.join('\n') }),
