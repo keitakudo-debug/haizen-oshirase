@@ -292,6 +292,17 @@
       <button class="btn" id="testNotifBtn">🔔 テスト通知を送る</button>
     </div>
 
+    <div class="subhead">アプリを閉じてても届く通知（チーム共有）</div>
+    <p class="helptext">下のトピック名をスマホの「ntfy」アプリ（App Store / Google Playで無料配布）に登録すると、このアプリを閉じていても・他の人がスマホに入れても、みんな同じタイミングで通知を受け取れます。</p>
+    <div class="field">
+      <label>ntfyトピック名</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="ntfyTopicDisplay" readonly style="flex:1;">
+        <button class="btn small" id="copyNtfyTopicBtn">コピー</button>
+      </div>
+      <p class="helptext" style="margin-top:6px;">⚠️ このトピック名を知っている人は誰でも通知を送れます。信頼できる関係者以外には共有しないでください。</p>
+    </div>
+
     <div class="subhead">日程（実際の日付）</div>
     <p class="helptext">「前日」「1日目」などのラベルに、実際のカレンダー日付を割り当ててください。日付が未設定の日程は、時間になっても自動通知されません。</p>
     <div id="dateMasterList"></div>
@@ -379,6 +390,11 @@
 <script>
 (function(){
 "use strict";
+
+/* ---------- server push (アプリを閉じてても届く通知) ---------- */
+// notify-config.jsonをチェックするGitHub Actionsが、この名前のntfyトピックへ通知を送る。
+// リポジトリのActionsシークレット NTFY_TOPIC と必ず同じ値にしておくこと。
+const NTFY_TOPIC = "haizen-oshirase-31080f5edca4";
 
 /* ---------- default data (from 2026配膳発注システム.xlsx) ---------- */
 const DEFAULT_DATE_MASTER = ["前日", "1日目", "2日目", "3日目"];
@@ -776,6 +792,14 @@ document.getElementById("testNotifBtn").addEventListener("click", async () => {
     addLog("システム: テスト通知を送信しました。");
   }
 });
+document.getElementById("copyNtfyTopicBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(NTFY_TOPIC);
+    toast("コピーしました。ntfyアプリの購読に貼り付けてください");
+  } catch (e) {
+    toast("コピーに失敗しました。手動で入力欄から選択してコピーしてください");
+  }
+});
 document.getElementById("notifyMinutesSel").addEventListener("change", (e) => {
   state.notifyMinutes = Number(e.target.value);
   saveState();
@@ -831,6 +855,7 @@ document.getElementById("addItemBtn").addEventListener("click", () => {
 
 function renderSettingsModal(){
   document.getElementById("notifyMinutesSel").value = String(state.notifyMinutes);
+  document.getElementById("ntfyTopicDisplay").value = NTFY_TOPIC;
   updatePermissionUI();
 
   const dateList = document.getElementById("dateMasterList");
