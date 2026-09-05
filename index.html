@@ -420,15 +420,30 @@ async function sendNtfyPush(title, body){
 // すると、古い予約分がそのまま届いてしまうことがある。
 const NTFY_MAX_DELAY_MS = 3 * 24 * 60 * 60 * 1000 - 5 * 60000; // 3日 − 5分の余裕
 
-async function scheduleNtfyReminder(item){
+// verbose=true のときは、なぜ予約されたか／されなかったかを通知ログに残す
+// （「＋ 追加」「編集」の直後など、ユーザー操作の結果として呼ぶ場合のみtrueにする。
+// 20秒おきのcheckScheduleから全件に対して毎回呼ぶ場合はfalseのままにし、ログが
+// 埋め尽くされないようにする）。
+async function scheduleNtfyReminder(item, verbose){
+  const label = item.place + "（" + item.team + "）";
   if (item.status !== "発注済") return;
   const dt = getItemDateTime(item);
-  if (!dt) return;
+  if (!dt) {
+    if (verbose) addLog("⚠【未予約】" + label + "は" + (item.time ? "⚙で「日程（実際の日付）」が未設定のため" : "設置時間が「時間未定」のため") + "、" + state.notifyMinutes + "分前通知は予約されません。");
+    return;
+  }
   const notifyAtMs = dt.getTime() - state.notifyMinutes * 60000;
   const key = "ntfy-pre-" + item.id + "-" + notifyAtMs;
   if (state.scheduledNtfyKeys.includes(key)) return;
   const delayMs = notifyAtMs - Date.now();
-  if (delayMs <= 0 || delayMs > NTFY_MAX_DELAY_MS) return;
+  if (delayMs <= 0) {
+    if (verbose) addLog("⚠【未予約】" + label + "は設置時間まで" + state.notifyMinutes + "分を切っているため、" + state.notifyMinutes + "分前通知はスキップされました（配達完了ボタンの通知は別途届きます）。");
+    return;
+  }
+  if (delayMs > NTFY_MAX_DELAY_MS) {
+    if (verbose) addLog("⏳【保留】" + label + "は3日より先の予定のため、3日以内に入ってから誰かがアプリを開いたタイミングで自動予約されます。");
+    return;
+  }
   try {
     const res = await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_TOPIC), {
       method: "POST",
@@ -439,9 +454,15 @@ async function scheduleNtfyReminder(item){
       state.scheduledNtfyKeys.push(key);
       if (state.scheduledNtfyKeys.length > 500) state.scheduledNtfyKeys = state.scheduledNtfyKeys.slice(-500);
       saveState();
+      if (verbose) {
+        const na = new Date(notifyAtMs);
+        addLog("⏰【予約済み】" + label + "の" + state.notifyMinutes + "分前（" + pad2(na.getHours()) + ":" + pad2(na.getMinutes()) + "）に通知を予約しました。");
+      }
+    } else if (verbose) {
+      addLog("⚠【予約失敗】" + label + "の通知予約に失敗しました（サーバー応答エラー）。アプリを開き直すと自動で再試行されます。");
     }
   } catch (e) {
-    // 送信できなくても、次回のcheckSchedule実行時に再試行される
+    if (verbose) addLog("⚠【予約失敗】" + label + "の通知予約に失敗しました（通信エラー）。アプリを開き直すと自動で再試行されます。");
   }
 }
 
@@ -1071,14 +1092,14 @@ document.getElementById("saveEntryBtn").addEventListener("click", () => {
     const item = state.scheduleData.find(i => i.id === Number(idRaw));
     Object.assign(item, { date, time, nextDay, team, place, note }, qty);
     addLog("✏️【編集】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
-    scheduleNtfyReminder(item);
+    scheduleNtfyReminder(item, true);
     toast("更新しました");
   } else {
     const item = Object.assign({ id: state.nextId++, date, time, nextDay, team, place, note, status: "発注済" }, qty);
     state.scheduleData.push(item);
     addLog("＋【新規追加】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
     sendNtfyPush("🆕 新規登録", (time || "時間未定") + " " + place + "（" + team + "）" + (note ? ("\n📝 " + note) : ""));
-    scheduleNtfyReminder(item);
+    scheduleNtfyReminder(item, true);
     toast("追加しました。通知を送信しました");
   }
   saveState();
