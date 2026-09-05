@@ -396,6 +396,59 @@
 // リポジトリのActionsシークレット NTFY_TOPIC と必ず同じ値にしておくこと。
 const NTFY_TOPIC = "haizen-oshirase-31080f5edca4";
 
+// 新規登録・配達完了など「今すぐ全員に知らせたい」操作は、5分おきのGitHub Actions
+// を待たずに、その場でntfyへ直接送信する（ntfyアプリを購読済みの端末には
+// アプリを閉じていてもホーム画面に即座に届く）。
+async function sendNtfyPush(title, body){
+  try {
+    await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_TOPIC), {
+      method: "POST",
+      headers: { Priority: "high" },
+      body: title + "\n" + body
+    });
+  } catch (e) {
+    // 送信できなくても（オフライン等）アプリ自体の操作は継続させる
+  }
+}
+
+// 「◯分前」のリマインドは、5分おきのGitHub Actionsを待たずに、ntfyの
+// 予約配信機能（X-Delayヘッダー）を使ってその場で先行予約する。これにより、
+// 誰の端末もアプリを開いていない時間帯でも、予約した時刻ちょうどに全員へ届く。
+// 制約: ntfy.shの無料枠は最大3日先までしか予約できないため、それより先の予定は
+// いったんスキップし、3日以内に入ってから（アプリが開かれたタイミングで）改めて
+// 予約する。また、一度予約した通知は取り消せないため、予約後に時間を編集・削除
+// すると、古い予約分がそのまま届いてしまうことがある。
+const NTFY_MAX_DELAY_MS = 3 * 24 * 60 * 60 * 1000 - 5 * 60000; // 3日 − 5分の余裕
+
+async function scheduleNtfyReminder(item){
+  if (item.status !== "発注済") return;
+  const dt = getItemDateTime(item);
+  if (!dt) return;
+  const notifyAtMs = dt.getTime() - state.notifyMinutes * 60000;
+  const key = "ntfy-pre-" + item.id + "-" + notifyAtMs;
+  if (state.scheduledNtfyKeys.includes(key)) return;
+  const delayMs = notifyAtMs - Date.now();
+  if (delayMs <= 0 || delayMs > NTFY_MAX_DELAY_MS) return;
+  try {
+    const res = await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_TOPIC), {
+      method: "POST",
+      headers: { Priority: "high", "X-Delay": String(Math.round(notifyAtMs / 1000)) },
+      body: "⏰ " + state.notifyMinutes + "分前\n" + (item.time || "") + " " + item.place + "（" + item.team + "）" + (item.note ? ("\n📝 " + item.note) : "")
+    });
+    if (res.ok) {
+      state.scheduledNtfyKeys.push(key);
+      if (state.scheduledNtfyKeys.length > 500) state.scheduledNtfyKeys = state.scheduledNtfyKeys.slice(-500);
+      saveState();
+    }
+  } catch (e) {
+    // 送信できなくても、次回のcheckSchedule実行時に再試行される
+  }
+}
+
+function scheduleAllNtfyReminders(){
+  state.scheduleData.forEach(item => scheduleNtfyReminder(item));
+}
+
 /* ---------- default data (from 2026配膳発注システム.xlsx) ---------- */
 const DEFAULT_DATE_MASTER = ["前日", "1日目", "2日目", "3日目"];
 
@@ -426,6 +479,7 @@ function defaultState(){
     dayDates,
     notifyMinutes: 10,
     notifiedKeys: [],
+    scheduledNtfyKeys: [],
     logs: [],
     nextId: DEFAULT_SCHEDULE.length + 1
   };
@@ -605,6 +659,7 @@ function checkSchedule(){
   let changed = false;
   state.scheduleData.forEach(item => {
     if (item.status !== "発注済") return;
+    scheduleNtfyReminder(item);
     const dt = getItemDateTime(item);
     if (!dt) return;
     const diffMin = (dt.getTime() - now.getTime()) / 60000;
@@ -763,6 +818,7 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
     saveState();
     if (item.status === "配達完了") {
       showAppNotification("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）", "done-" + item.id + "-" + Date.now());
+      sendNtfyPush("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
       addLog("✅【配達完了】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
       toast("✅ 配達完了として記録し、通知を送りました");
     } else {
@@ -802,7 +858,9 @@ document.getElementById("copyNtfyTopicBtn").addEventListener("click", async () =
 });
 document.getElementById("notifyMinutesSel").addEventListener("change", (e) => {
   state.notifyMinutes = Number(e.target.value);
+  state.scheduledNtfyKeys = []; // 通知タイミングが変わったので、古い予約時刻は無効。新しい時刻で予約し直す
   saveState();
+  scheduleAllNtfyReminders();
   toast("通知タイミングを" + state.notifyMinutes + "分前に変更しました");
   renderHero();
 });
@@ -810,7 +868,9 @@ document.getElementById("resetStatusBtn").addEventListener("click", () => {
   if (!confirm("すべての予定を「発注済」に戻し、通知履歴をリセットします。よろしいですか？")) return;
   state.scheduleData.forEach(i => i.status = "発注済");
   state.notifiedKeys = [];
+  state.scheduledNtfyKeys = [];
   saveState();
+  scheduleAllNtfyReminders();
   renderAll();
   toast("全件を発注済に戻しました");
 });
@@ -872,6 +932,7 @@ function renderSettingsModal(){
     inp.addEventListener("change", () => {
       state.dayDates[inp.dataset.dateFor] = inp.value;
       saveState();
+      scheduleAllNtfyReminders();
       renderAll();
     });
   });
@@ -1010,12 +1071,15 @@ document.getElementById("saveEntryBtn").addEventListener("click", () => {
     const item = state.scheduleData.find(i => i.id === Number(idRaw));
     Object.assign(item, { date, time, nextDay, team, place, note }, qty);
     addLog("✏️【編集】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
+    scheduleNtfyReminder(item);
     toast("更新しました");
   } else {
     const item = Object.assign({ id: state.nextId++, date, time, nextDay, team, place, note, status: "発注済" }, qty);
     state.scheduleData.push(item);
     addLog("＋【新規追加】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
-    toast("追加しました");
+    sendNtfyPush("🆕 新規登録", (time || "時間未定") + " " + place + "（" + team + "）" + (note ? ("\n📝 " + note) : ""));
+    scheduleNtfyReminder(item);
+    toast("追加しました。通知を送信しました");
   }
   saveState();
   closeModal("entryModal");
