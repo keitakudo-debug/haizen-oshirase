@@ -807,6 +807,7 @@ function renderList(){
           '<div class="item-actions">' +
             '<button class="btn small" data-act="toggle" data-id="' + item.id + '">' + (item.status === "発注済" ? "完了にする" : "未完了に戻す") + '</button>' +
             '<button class="btn small ghost" data-act="edit" data-id="' + item.id + '">編集</button>' +
+            '<button class="btn small danger" data-act="delete" data-id="' + item.id + '">削除</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -848,6 +849,8 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
     renderHero(); renderList();
   } else if (btn.dataset.act === "edit") {
     openEntryModal(item);
+  } else if (btn.dataset.act === "delete") {
+    deleteScheduleItem(id);
   }
 });
 
@@ -1008,7 +1011,15 @@ document.getElementById("calcBoxBtn").addEventListener("click", () => {
     const el = document.getElementById("qty_" + m.id);
     if (!el) return;
     const v = Number(el.value) || 0;
-    if (v > 0) lines.push(escapeHtml(m.label) + ": " + v + "本 → 約" + Math.ceil(v / unit) + "箱");
+    if (v > 0) {
+      const boxes = Math.floor(v / unit);
+      const rest = v % unit;
+      let result;
+      if (boxes === 0) result = rest + "本（1箱未満）";
+      else if (rest === 0) result = boxes + "箱";
+      else result = boxes + "箱と" + rest + "本";
+      lines.push(escapeHtml(m.label) + ": " + v + "本 → " + result);
+    }
   });
   if (!lines.length) { out.hidden = true; toast("数量が入力されていません"); return; }
   out.innerHTML = lines.join("<br>");
@@ -1107,16 +1118,20 @@ document.getElementById("saveEntryBtn").addEventListener("click", () => {
   renderAll();
 });
 
-document.getElementById("deleteEntryBtn").addEventListener("click", () => {
-  const id = Number(document.getElementById("fId").value);
+function deleteScheduleItem(id){
   const item = state.scheduleData.find(i => i.id === id);
-  if (!item) return;
-  if (!confirm(item.date + " " + (item.time || "") + " " + item.place + " を削除しますか？")) return;
+  if (!item) return false;
+  if (!confirm(item.date + " " + (item.time || "") + " " + item.place + " を削除しますか？")) return false;
   state.scheduleData = state.scheduleData.filter(i => i.id !== id);
   saveState();
-  closeModal("entryModal");
   renderAll();
   toast("削除しました");
+  return true;
+}
+
+document.getElementById("deleteEntryBtn").addEventListener("click", () => {
+  const id = Number(document.getElementById("fId").value);
+  if (deleteScheduleItem(id)) closeModal("entryModal");
 });
 
 /* ---------- boot ---------- */
