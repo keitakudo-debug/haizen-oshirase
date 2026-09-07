@@ -804,6 +804,7 @@ function renderList(){
         '<div class="item-row1"><span class="item-place">' + escapeHtml(item.place) + '</span><span class="item-team">' + escapeHtml(item.team) + '・' + escapeHtml(item.date) + '</span></div>' +
         '<div class="item-summary">' + formatQtySummary(item) + '</div>' +
         (item.note ? '<div class="item-note">📝 ' + escapeHtml(item.note) + '</div>' : '') +
+        (item.status === "配達完了" && item.deliveredBy ? '<div class="item-note">👤 担当: ' + escapeHtml(item.deliveredBy) + '</div>' : '') +
         '<div class="item-foot">' +
           '<div class="item-status-group"><span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' + warnHtml + '</div>' +
           '<div class="item-actions">' +
@@ -839,13 +840,18 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
   if (!item) return;
   if (btn.dataset.act === "toggle") {
     item.status = item.status === "発注済" ? "配達完了" : "発注済";
-    saveState();
     if (item.status === "配達完了") {
-      showAppNotification("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）", "done-" + item.id + "-" + Date.now());
-      sendNtfyPush("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
-      addLog("✅【配達完了】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
+      const name = prompt("配達した方のお名前を入力してください（空欄でもOK）", item.deliveredBy || "");
+      item.deliveredBy = name ? name.trim() : "";
+      saveState();
+      const who = item.deliveredBy ? "（担当: " + item.deliveredBy + "）" : "";
+      showAppNotification("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + who, "done-" + item.id + "-" + Date.now());
+      sendNtfyPush("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + who);
+      addLog("✅【配達完了】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + who);
       toast("✅ 配達完了として記録し、通知を送りました");
     } else {
+      item.deliveredBy = "";
+      saveState();
       addLog("↩【差し戻し】" + item.date + " " + item.place + "（" + item.team + "）を発注済に戻しました。");
     }
     renderHero(); renderList();
