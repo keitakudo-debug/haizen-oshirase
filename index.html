@@ -362,13 +362,15 @@
     <div class="subhead">数量</div>
     <div class="field-row" style="margin-bottom:8px;">
       <div class="field" style="margin-bottom:0;">
-        <label for="boxUnitSize">1箱あたりの本数</label>
+        <label for="boxUnitSize">1箱あたりの本数①</label>
         <input type="number" id="boxUnitSize" value="24" min="1">
       </div>
-      <div class="field" style="margin-bottom:0; align-self:end;">
-        <button class="btn" id="calcBoxBtn" style="width:100%;">📦 箱数の目安を計算</button>
+      <div class="field" style="margin-bottom:0;">
+        <label for="boxUnitSize2">1箱あたりの本数②（任意）</label>
+        <input type="number" id="boxUnitSize2" placeholder="例: 30" min="1">
       </div>
     </div>
+    <button class="btn" id="calcBoxBtn" style="width:100%; margin-bottom:8px;">📦 箱数の目安を計算</button>
     <div class="qty-grid" id="qtyGrid"></div>
     <div class="boxcalc-out" id="boxcalcOut" hidden></div>
 
@@ -1002,8 +1004,18 @@ function renderQtyGrid(item){
   document.getElementById("boxcalcOut").hidden = true;
 }
 
+function formatBoxBreakdown(v, unit){
+  const boxes = Math.floor(v / unit);
+  const rest = v % unit;
+  if (boxes === 0) return rest + "本（1箱未満）";
+  if (rest === 0) return boxes + "箱";
+  return boxes + "箱と" + rest + "本";
+}
+
 document.getElementById("calcBoxBtn").addEventListener("click", () => {
-  const unit = Math.max(1, Number(document.getElementById("boxUnitSize").value) || 24);
+  const unit1 = Math.max(1, Number(document.getElementById("boxUnitSize").value) || 24);
+  const unit2Raw = Number(document.getElementById("boxUnitSize2").value);
+  const unit2 = unit2Raw > 0 ? unit2Raw : null;
   const out = document.getElementById("boxcalcOut");
   const lines = [];
   state.itemMaster.forEach(m => {
@@ -1012,12 +1024,9 @@ document.getElementById("calcBoxBtn").addEventListener("click", () => {
     if (!el) return;
     const v = Number(el.value) || 0;
     if (v > 0) {
-      const boxes = Math.floor(v / unit);
-      const rest = v % unit;
-      let result;
-      if (boxes === 0) result = rest + "本（1箱未満）";
-      else if (rest === 0) result = boxes + "箱";
-      else result = boxes + "箱と" + rest + "本";
+      const result = unit2
+        ? ("①" + unit1 + "本/箱: " + formatBoxBreakdown(v, unit1) + "　②" + unit2 + "本/箱: " + formatBoxBreakdown(v, unit2))
+        : formatBoxBreakdown(v, unit1);
       lines.push(escapeHtml(m.label) + ": " + v + "本 → " + result);
     }
   });
