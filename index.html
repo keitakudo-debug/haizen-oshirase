@@ -288,6 +288,23 @@
       </select>
     </div>
     <div class="field">
+      <label for="recheckMinutesSel">「確認しました」が押されていないときの再通知</label>
+      <select id="recheckMinutesSel">
+        <option value="0">再通知しない</option>
+        <option value="3">3分前に再通知</option>
+        <option value="5">5分前に再通知</option>
+        <option value="10">10分前に再通知</option>
+        <option value="15">15分前に再通知</option>
+        <option value="30">30分前に再通知</option>
+      </select>
+      <p class="helptext" id="recheckHelp" style="margin-top:6px;"></p>
+      <label class="checkline"><input type="checkbox" id="escalateChk"> 未確認のときだけ、サブ担当者・拠点端末にも通知する</label>
+    </div>
+    <div class="field">
+      <label for="myNameInput">あなたの名前（「確認しました」を押した人として表示）</label>
+      <input type="text" id="myNameInput" placeholder="例: 工藤">
+    </div>
+    <div class="field">
       <p id="permStatusLine" class="helptext"></p>
       <button class="btn" id="testNotifBtn">🔔 テスト通知を送る</button>
     </div>
@@ -301,6 +318,14 @@
         <button class="btn small" id="copyNtfyTopicBtn">コピー</button>
       </div>
       <p class="helptext" style="margin-top:6px;">⚠️ このトピック名を知っている人は誰でも通知を送れます。信頼できる関係者以外には共有しないでください。</p>
+    </div>
+    <div class="field">
+      <label>サブ担当者・拠点端末用トピック名</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="ntfySubTopicDisplay" readonly style="flex:1;">
+        <button class="btn small" id="copyNtfySubTopicBtn">コピー</button>
+      </div>
+      <p class="helptext" style="margin-top:6px;">サブ担当者や拠点に置く端末は、こちらをntfyアプリで購読してください。担当者が「確認しました」を押さなかったときだけ通知が届きます（上のトピックとは別に登録します）。</p>
     </div>
 
     <div class="subhead">日程（実際の日付）</div>
@@ -359,6 +384,11 @@
       </div>
     </div>
 
+    <div class="field">
+      <label for="fAssignee">担当者（任意・通知に表示）</label>
+      <input type="text" id="fAssignee" placeholder="例: 工藤">
+    </div>
+
     <div class="subhead">数量</div>
     <div class="field-row" style="margin-bottom:8px;">
       <div class="field" style="margin-bottom:0;">
@@ -393,14 +423,17 @@
 (function(){
 "use strict";
 
-/* ---------- server push (アプリを閉じてても届く通知) ---------- */
-// notify-config.jsonをチェックするGitHub Actionsが、この名前のntfyトピックへ通知を送る。
-// リポジトリのActionsシークレット NTFY_TOPIC と必ず同じ値にしておくこと。
+/* ---------- ntfy push (アプリを閉じてても届く通知) ---------- */
+// 3つのntfyトピックを使う（サーバー不要）。
+//  NTFY_TOPIC      … 配達担当者が購読。◯分前通知・未確認時の再通知が届く
+//  NTFY_SUB_TOPIC  … サブ担当者・拠点端末が購読。担当者が未確認のときだけ届く
+//  NTFY_ACK_TOPIC  … 「確認しました」の記録用（人は購読しない）。各端末がここを読んで確認状況を共有する
 const NTFY_TOPIC = "haizen-oshirase-31080f5edca4";
+const NTFY_SUB_TOPIC = NTFY_TOPIC + "-sub";
+const NTFY_ACK_TOPIC = NTFY_TOPIC + "-ack";
+const APP_URL = location.origin + location.pathname.replace(/index\.html$/, "");
 
-// 新規登録・配達完了など「今すぐ全員に知らせたい」操作は、5分おきのGitHub Actions
-// を待たずに、その場でntfyへ直接送信する（ntfyアプリを購読済みの端末には
-// アプリを閉じていてもホーム画面に即座に届く）。
+// 新規登録・配達完了など「今すぐ全員に知らせたい」操作は、その場でntfyへ直接送信する
 async function sendNtfyPush(title, body){
   try {
     await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_TOPIC), {
@@ -413,63 +446,179 @@ async function sendNtfyPush(title, body){
   }
 }
 
-// 「◯分前」のリマインドは、5分おきのGitHub Actionsを待たずに、ntfyの
-// 予約配信機能（X-Delayヘッダー）を使ってその場で先行予約する。これにより、
-// 誰の端末もアプリを開いていない時間帯でも、予約した時刻ちょうどに全員へ届く。
-// 制約: ntfy.shの無料枠は最大3日先までしか予約できないため、それより先の予定は
-// いったんスキップし、3日以内に入ってから（アプリが開かれたタイミングで）改めて
-// 予約する。また、一度予約した通知は取り消せないため、予約後に時間を編集・削除
-// すると、古い予約分がそのまま届いてしまうことがある。
-const NTFY_MAX_DELAY_MS = 3 * 24 * 60 * 60 * 1000 - 5 * 60000; // 3日 − 5分の余裕
-
-// verbose=true のときは、なぜ予約されたか／されなかったかを通知ログに残す
-// （「＋ 追加」「編集」の直後など、ユーザー操作の結果として呼ぶ場合のみtrueにする。
-// 20秒おきのcheckScheduleから全件に対して毎回呼ぶ場合はfalseのままにし、ログが
-// 埋め尽くされないようにする）。
-async function scheduleNtfyReminder(item, verbose){
-  const label = item.place + "（" + item.team + "）";
-  if (item.status !== "発注済") return;
-  const dt = getItemDateTime(item);
-  if (!dt) {
-    if (verbose) addLog("⚠【未予約】" + label + "は" + (item.time ? "⚙で「日程（実際の日付）」が未設定のため" : "設置時間が「時間未定」のため") + "、" + state.notifyMinutes + "分前通知は予約されません。");
-    return;
-  }
-  const notifyAtMs = dt.getTime() - state.notifyMinutes * 60000;
-  const key = "ntfy-pre-" + item.id + "-" + notifyAtMs;
-  if (state.scheduledNtfyKeys.includes(key)) return;
-  const delayMs = notifyAtMs - Date.now();
-  if (delayMs <= 0) {
-    if (verbose) addLog("⚠【未予約】" + label + "は設置時間まで" + state.notifyMinutes + "分を切っているため、" + state.notifyMinutes + "分前通知はスキップされました（配達完了ボタンの通知は別途届きます）。");
-    return;
-  }
-  if (delayMs > NTFY_MAX_DELAY_MS) {
-    if (verbose) addLog("⏳【保留】" + label + "は3日より先の予定のため、3日以内に入ってから誰かがアプリを開いたタイミングで自動予約されます。");
-    return;
-  }
+async function ntfyPublish(msg){
   try {
-    const res = await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_TOPIC), {
-      method: "POST",
-      headers: { Priority: "high", "X-Delay": String(Math.round(notifyAtMs / 1000)) },
-      body: "⏰ " + state.notifyMinutes + "分前\n" + (item.time || "") + " " + item.place + "（" + item.team + "）" + (item.note ? ("\n📝 " + item.note) : "")
-    });
-    if (res.ok) {
-      state.scheduledNtfyKeys.push(key);
-      if (state.scheduledNtfyKeys.length > 500) state.scheduledNtfyKeys = state.scheduledNtfyKeys.slice(-500);
-      saveState();
-      if (verbose) {
-        const na = new Date(notifyAtMs);
-        addLog("⏰【予約済み】" + label + "の" + state.notifyMinutes + "分前（" + pad2(na.getHours()) + ":" + pad2(na.getMinutes()) + "）に通知を予約しました。");
-      }
-    } else if (verbose) {
-      addLog("⚠【予約失敗】" + label + "の通知予約に失敗しました（サーバー応答エラー）。アプリを開き直すと自動で再試行されます。");
-    }
+    const res = await fetch("https://ntfy.sh/", { method: "POST", body: JSON.stringify(msg) });
+    return res.status;
   } catch (e) {
-    if (verbose) addLog("⚠【予約失敗】" + label + "の通知予約に失敗しました（通信エラー）。アプリを開き直すと自動で再試行されます。");
+    return 0;
   }
 }
 
-function scheduleAllNtfyReminders(){
-  state.scheduleData.forEach(item => scheduleNtfyReminder(item));
+// 予約済みの通知を取り消す（同じsequence_idの予約を削除）。配信済みなら何も起きない
+async function ntfyCancel(topic, seq){
+  try {
+    await fetch("https://ntfy.sh/" + encodeURIComponent(topic) + "/" + encodeURIComponent(seq), { method: "DELETE" });
+  } catch (e) {}
+}
+
+// 時間前リマインドは、ntfyの予約配信を使ってその場で先行予約する。
+// 予定ごとに固定のsequence_id（pre-/re-/esc- + 予定ID）で予約するので、
+// 時間を編集すると古い予約は自動で置き換わり、配達完了・確認済み・削除で取り消せる。
+// 複数の端末が同じ予定を予約しても、同じsequence_idなので重複して届かない。
+// 制約: ntfy.shの無料枠は最大3日先までしか予約できないため、それより先の予定は
+// 3日以内に入ってから（アプリが開かれたタイミングで）改めて予約する。
+const NTFY_MAX_DELAY_MS = 3 * 24 * 60 * 60 * 1000 - 5 * 60000; // 3日 − 5分の余裕
+
+function ackKey(item, dt){ return item.id + "@" + dt.getTime(); }
+function isAcked(item){
+  const dt = getItemDateTime(item);
+  return !!(dt && state.acks[ackKey(item, dt)]);
+}
+function recheckActive(){
+  return state.recheckMinutes > 0 && state.recheckMinutes < state.notifyMinutes;
+}
+
+function itemPlans(item, dt, acked){
+  const id = item.id;
+  const dueMs = dt.getTime();
+  const reAt = dueMs - state.recheckMinutes * 60000;
+  return [
+    { seq: "pre-" + id, topic: NTFY_TOPIC, at: dueMs - state.notifyMinutes * 60000,
+      title: "⏰ " + state.notifyMinutes + "分前のお知らせ", priority: 4, skip: acked },
+    { seq: "re-" + id, topic: NTFY_TOPIC, at: reAt,
+      title: "🔁 再通知：まだ「確認しました」が押されていません", priority: 5, skip: acked || !recheckActive() },
+    { seq: "esc-" + id, topic: NTFY_SUB_TOPIC, at: reAt,
+      title: "🚨 担当者が未確認です（あと" + state.recheckMinutes + "分）", priority: 5, skip: acked || !recheckActive() || !state.escalateToSub }
+  ];
+}
+
+// verbose=true のときは、なぜ予約されたか／されなかったかを通知ログに残す
+// （「＋ 追加」「編集」の直後など、ユーザー操作の結果として呼ぶ場合のみtrueにする）。
+// 戻り値: ntfyから429（送りすぎ）が返ったら "limited"
+async function scheduleNtfyReminder(item, verbose){
+  const label = item.place + "（" + item.team + "）";
+  const dt = item.status === "発注済" ? getItemDateTime(item) : null;
+  if (!dt) {
+    if (verbose && item.status === "発注済") addLog("⚠【未予約】" + label + "は" + (item.time ? "⚙で「日程（実際の日付）」が未設定のため" : "設置時間が「時間未定」のため") + "、" + state.notifyMinutes + "分前通知は予約されません。");
+    await cancelItemReminders(item, false);
+    return;
+  }
+  const key = ackKey(item, dt);
+  const notice = buildNotice(item);
+  const now = Date.now();
+  for (const p of itemPlans(item, dt, !!state.acks[key])) {
+    if (p.skip) {
+      if (state.ntfyPlan[p.seq]) { await ntfyCancel(p.topic, p.seq); delete state.ntfyPlan[p.seq]; saveState(); }
+      continue;
+    }
+    const delayMs = p.at - now;
+    if (delayMs <= 0) {
+      if (verbose && p.seq.startsWith("pre-")) addLog("⚠【未予約】" + label + "は設置時間まで" + state.notifyMinutes + "分を切っているため、" + state.notifyMinutes + "分前通知はスキップされました。");
+      continue;
+    }
+    if (delayMs > NTFY_MAX_DELAY_MS) {
+      if (verbose && p.seq.startsWith("pre-")) addLog("⏳【保留】" + label + "は3日より先の予定のため、3日以内に入ってから誰かがアプリを開いたタイミングで自動予約されます。");
+      continue;
+    }
+    const sig = p.at + "|" + p.title + "|" + notice;
+    if (state.ntfyPlan[p.seq] === sig) continue;
+    const status = await ntfyPublish({
+      topic: p.topic,
+      sequence_id: p.seq,
+      title: p.title,
+      message: notice,
+      priority: p.priority,
+      delay: String(Math.round(p.at / 1000)),
+      click: APP_URL,
+      actions: [{ action: "view", label: "確認しました", url: APP_URL + "?ack=" + encodeURIComponent(key), clear: true }]
+    });
+    if (status === 200) {
+      state.ntfyPlan[p.seq] = sig;
+      saveState();
+      if (verbose && p.seq.startsWith("pre-")) {
+        const na = new Date(p.at);
+        addLog("⏰【予約済み】" + label + "の" + state.notifyMinutes + "分前（" + pad2(na.getHours()) + ":" + pad2(na.getMinutes()) + "）に通知を予約しました。" + (recheckActive() ? "未確認なら" + state.recheckMinutes + "分前に再通知します。" : ""));
+      }
+    } else {
+      if (verbose) addLog("⚠【予約失敗】" + label + "の通知予約に失敗しました。アプリを開き直すと自動で再試行されます。");
+      if (status === 429) return "limited";
+    }
+  }
+}
+
+// 予約済みの通知を取り消す。force=trueなら、この端末で予約していなくても
+// （他の端末が予約した分も含めて）必ず削除を送る
+async function cancelItemReminders(item, force){
+  const seqs = [["pre-" + item.id, NTFY_TOPIC], ["re-" + item.id, NTFY_TOPIC], ["esc-" + item.id, NTFY_SUB_TOPIC]];
+  let changed = false;
+  for (const [seq, topic] of seqs) {
+    if (force || state.ntfyPlan[seq]) {
+      await ntfyCancel(topic, seq);
+      delete state.ntfyPlan[seq];
+      changed = true;
+    }
+  }
+  if (changed) saveState();
+}
+
+let schedulingNow = false;
+async function scheduleAllNtfyReminders(){
+  if (schedulingNow) return;
+  schedulingNow = true;
+  try {
+    await pollAcks();
+    for (const item of state.scheduleData.slice()) {
+      if (await scheduleNtfyReminder(item) === "limited") break; // 送りすぎ。次回の定期チェックで続きを予約
+    }
+  } finally {
+    schedulingNow = false;
+  }
+}
+
+/* ---------- 「確認しました」（全端末で共有） ---------- */
+async function pollAcks(){
+  try {
+    const res = await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_ACK_TOPIC) + "/json?poll=1&since=12h");
+    if (!res.ok) return;
+    const text = await res.text();
+    let changed = false;
+    text.split("\n").forEach(line => {
+      if (!line.trim()) return;
+      try {
+        const ev = JSON.parse(line);
+        if (ev.event !== "message") return;
+        const a = JSON.parse(ev.message);
+        if (a && a.key && !state.acks[a.key]) {
+          state.acks[a.key] = { by: a.by || "", at: ev.time * 1000 };
+          changed = true;
+        }
+      } catch (e) {}
+    });
+    if (changed) { saveState(); renderHero(); renderList(); }
+  } catch (e) {}
+}
+
+async function acknowledge(key){
+  const id = Number(String(key).split("@")[0]);
+  const item = state.scheduleData.find(i => i.id === id);
+  if (state.acks[key]) {
+    toast("この予定はすでに確認済みです（" + (state.acks[key].by || "名前なし") + "）");
+    return;
+  }
+  if (!state.myName) {
+    const name = prompt("あなたの名前を入力してください（確認した人として全員に表示されます。⚙設定で変更できます）", "");
+    state.myName = name ? name.trim() : "";
+  }
+  state.acks[key] = { by: state.myName, at: Date.now() };
+  saveState();
+  ntfyPublish({ topic: NTFY_ACK_TOPIC, message: JSON.stringify({ key, by: state.myName }), priority: 1 });
+  cancelItemReminders({ id }, true); // まだ届いていない通知・再通知・サブ担当への通知を取り消す（予約した端末を問わず）
+  if (item) {
+    addLog("👀【確認しました】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + (state.myName ? " " + state.myName : ""));
+  }
+  toast("👀 確認しました。再通知は届きません");
+  renderHero(); renderList();
 }
 
 /* ---------- default data (from 2026配膳発注システム.xlsx) ---------- */
@@ -502,7 +651,11 @@ function defaultState(){
     dayDates,
     notifyMinutes: 10,
     notifiedKeys: [],
-    scheduledNtfyKeys: [],
+    ntfyPlan: {},        // sequence_id -> 予約内容（この端末で予約済みのもの）
+    acks: {},            // ackKey -> { by, at }（全端末で共有）
+    myName: "",
+    recheckMinutes: 5,   // 未確認ならこの分数前に再通知（0でオフ）
+    escalateToSub: true, // 未確認ならサブ担当・拠点端末にも通知
     logs: [],
     nextId: DEFAULT_SCHEDULE.length + 1
   };
@@ -554,6 +707,31 @@ function formatQtySummary(item){
     parts.push(escapeHtml(m.label) + " " + escapeHtml(v));
   });
   return parts.length ? parts.join(" / ") : "特記の数量なし";
+}
+
+// 通知本文: 「14時00分　在庫テントへ　アクエリアス500ml 20本・紙コップ 200個」
+function formatQtyForNotice(item){
+  const parts = [];
+  state.itemMaster.forEach(m => {
+    const v = item[m.id];
+    if (v === undefined || v === null || v === "" || v === 0 || v === "0") return;
+    if (m.type === "number") parts.push(m.label + " " + v + (m.id === "cup" ? "個" : "本"));
+    else parts.push(/^[〇○◯]$/.test(String(v)) ? m.label + "あり" : m.label + "：" + v);
+  });
+  return parts.join("・");
+}
+
+function buildNotice(item){
+  let when = "時間未定";
+  if (item.time) {
+    const [hh, mm] = item.time.split(":");
+    when = Number(hh) + "時" + mm + "分" + (item.nextDay ? "（翌日）" : "");
+  }
+  const qty = formatQtyForNotice(item);
+  const lines = [when + "　" + item.place + "へ" + (qty ? "　" + qty : "")];
+  lines.push("チーム: " + item.team + (item.assignee ? "　担当: " + item.assignee : ""));
+  if (item.note) lines.push("📝 " + item.note);
+  return lines.join("\n");
 }
 
 function addLog(text){
@@ -677,23 +855,19 @@ async function requestPermission(){
 const CATCHUP_WINDOW_MIN = -90; // fire for items up to 90min overdue when app re-opens
 
 function checkSchedule(){
+  scheduleAllNtfyReminders(); // 確認状況の取得とntfy予約は、端末の通知許可に関係なく行う
   if (!notificationsSupported() || Notification.permission !== "granted") return;
   const now = new Date();
   let changed = false;
   state.scheduleData.forEach(item => {
     if (item.status !== "発注済") return;
-    scheduleNtfyReminder(item);
     const dt = getItemDateTime(item);
     if (!dt) return;
     const diffMin = (dt.getTime() - now.getTime()) / 60000;
     const key = "pre-" + item.id;
     if (diffMin <= state.notifyMinutes && diffMin > CATCHUP_WINDOW_MIN && !state.notifiedKeys.includes(key)) {
       const label = diffMin <= 0 ? "設置時刻です" : Math.round(diffMin) + "分前";
-      showAppNotification(
-        "⏰ " + label,
-        (item.time || "") + " " + item.place + "（" + item.team + "）",
-        key
-      );
+      showAppNotification("⏰ " + label, buildNotice(item), key);
       addLog("⏰【" + label + "】" + item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）");
       state.notifiedKeys.push(key);
       changed = true;
@@ -754,7 +928,25 @@ function renderHero(){
     '<div class="hero-eyebrow">次の配膳予定</div>' +
     '<div class="hero-title">' + escapeHtml(best.place) + '（' + escapeHtml(best.team) + '）</div>' +
     '<div class="hero-sub">' + escapeHtml(best.date) + ' ' + escapeHtml(best.time) + (best.nextDay ? "（翌日）" : "") + " ・ " + state.notifyMinutes + "分前に通知します" + '</div>' +
-    '<div class="hero-count">' + countLabel + '</div>';
+    '<div class="hero-sub">' + escapeHtml(buildNotice(best)).replace(/\n/g, "<br>") + '</div>' +
+    '<div class="hero-count">' + countLabel + '</div>' +
+    heroAckHtml(best);
+}
+
+function heroAckHtml(item){
+  const ack = ackState(item);
+  if (ack.acked) return '<div class="hero-sub">👀 確認済み' + (ack.by ? '（' + escapeHtml(ack.by) + '）' : '') + '</div>';
+  if (!ack.due) return '';
+  return '<button class="btn primary" style="margin-top:12px; width:100%; font-size:15px; padding:12px;" data-hero-ack="' + item.id + '">👀 確認しました</button>';
+}
+
+// due: ◯分前通知の時刻を過ぎていて、まだ配達完了していない（＝確認ボタンを出す）
+function ackState(item){
+  const dt = item.status === "発注済" ? getItemDateTime(item) : null;
+  if (!dt) return { acked: false, due: false };
+  const a = state.acks[ackKey(item, dt)];
+  if (a) return { acked: true, by: a.by, due: true };
+  return { acked: false, due: Date.now() >= dt.getTime() - state.notifyMinutes * 60000 };
 }
 
 function renderList(){
@@ -797,6 +989,11 @@ function renderList(){
     const pillClass = item.status === "配達完了" ? "done" : "pending";
     const dateUnset = item.status === "発注済" && !!item.time && !state.dayDates[item.date];
     const warnHtml = dateUnset ? '<span class="pill warn" title="⚙設定 →「日程（実際の日付）」で' + escapeHtml(item.date) + 'の日付を入れないと自動通知されません">⚠ 日付未設定</span>' : '';
+    const ack = ackState(item);
+    const ackHtml = ack.acked
+      ? '<span class="pill done">👀 確認済み' + (ack.by ? '（' + escapeHtml(ack.by) + '）' : '') + '</span>'
+      : (ack.due ? '<span class="pill warn">未確認</span>' : '');
+    const ackBtnHtml = (!ack.acked && ack.due) ? '<button class="btn small primary" data-act="ack" data-id="' + item.id + '">確認しました</button>' : '';
 
     li.innerHTML =
       timeHtml +
@@ -804,10 +1001,12 @@ function renderList(){
         '<div class="item-row1"><span class="item-place">' + escapeHtml(item.place) + '</span><span class="item-team">' + escapeHtml(item.team) + '・' + escapeHtml(item.date) + '</span></div>' +
         '<div class="item-summary">' + formatQtySummary(item) + '</div>' +
         (item.note ? '<div class="item-note">📝 ' + escapeHtml(item.note) + '</div>' : '') +
+        (item.assignee ? '<div class="item-note">🙋 担当者: ' + escapeHtml(item.assignee) + '</div>' : '') +
         (item.status === "配達完了" && item.deliveredBy ? '<div class="item-note">👤 担当: ' + escapeHtml(item.deliveredBy) + '</div>' : '') +
         '<div class="item-foot">' +
-          '<div class="item-status-group"><span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' + warnHtml + '</div>' +
+          '<div class="item-status-group"><span class="pill ' + pillClass + '">' + escapeHtml(item.status) + '</span>' + ackHtml + warnHtml + '</div>' +
           '<div class="item-actions">' +
+            ackBtnHtml +
             '<button class="btn small" data-act="toggle" data-id="' + item.id + '">' + (item.status === "発注済" ? "完了にする" : "未完了に戻す") + '</button>' +
             '<button class="btn small ghost" data-act="edit" data-id="' + item.id + '">編集</button>' +
             '<button class="btn small danger" data-act="delete" data-id="' + item.id + '">削除</button>' +
@@ -838,12 +1037,16 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
   const id = Number(btn.dataset.id);
   const item = state.scheduleData.find(i => i.id === id);
   if (!item) return;
-  if (btn.dataset.act === "toggle") {
+  if (btn.dataset.act === "ack") {
+    const dt = getItemDateTime(item);
+    if (dt) acknowledge(ackKey(item, dt));
+  } else if (btn.dataset.act === "toggle") {
     item.status = item.status === "発注済" ? "配達完了" : "発注済";
     if (item.status === "配達完了") {
-      const name = prompt("配達した方のお名前を入力してください（空欄でもOK）", item.deliveredBy || "");
+      const name = prompt("配達した方のお名前を入力してください（空欄でもOK）", item.deliveredBy || state.myName || "");
       item.deliveredBy = name ? name.trim() : "";
       saveState();
+      cancelItemReminders(item, true); // まだ届いていない時間前通知・再通知は不要になったので取り消す
       const who = item.deliveredBy ? "（担当: " + item.deliveredBy + "）" : "";
       showAppNotification("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + who, "done-" + item.id + "-" + Date.now());
       sendNtfyPush("✅ 配達完了", item.date + " " + (item.time || "") + " " + item.place + "（" + item.team + "）" + who);
@@ -852,6 +1055,7 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
     } else {
       item.deliveredBy = "";
       saveState();
+      scheduleNtfyReminder(item, true);
       addLog("↩【差し戻し】" + item.date + " " + item.place + "（" + item.team + "）を発注済に戻しました。");
     }
     renderHero(); renderList();
@@ -860,6 +1064,14 @@ document.getElementById("scheduleList").addEventListener("click", (e) => {
   } else if (btn.dataset.act === "delete") {
     deleteScheduleItem(id);
   }
+});
+
+document.getElementById("heroCard").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-hero-ack]");
+  if (!btn) return;
+  const item = state.scheduleData.find(i => i.id === Number(btn.dataset.heroAck));
+  const dt = item && getItemDateTime(item);
+  if (dt) acknowledge(ackKey(item, dt));
 });
 
 document.getElementById("searchInput").addEventListener("input", renderList);
@@ -888,19 +1100,43 @@ document.getElementById("copyNtfyTopicBtn").addEventListener("click", async () =
     toast("コピーに失敗しました。手動で入力欄から選択してコピーしてください");
   }
 });
+document.getElementById("copyNtfySubTopicBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(NTFY_SUB_TOPIC);
+    toast("コピーしました。サブ担当者・拠点端末のntfyアプリに貼り付けてください");
+  } catch (e) {
+    toast("コピーに失敗しました。手動で入力欄から選択してコピーしてください");
+  }
+});
+// 時刻が変わった予約は、同じsequence_idで出し直すと古い予約が自動で置き換わる
 document.getElementById("notifyMinutesSel").addEventListener("change", (e) => {
   state.notifyMinutes = Number(e.target.value);
-  state.scheduledNtfyKeys = []; // 通知タイミングが変わったので、古い予約時刻は無効。新しい時刻で予約し直す
   saveState();
   scheduleAllNtfyReminders();
   toast("通知タイミングを" + state.notifyMinutes + "分前に変更しました");
-  renderHero();
+  renderSettingsModal(); renderAll();
+});
+document.getElementById("recheckMinutesSel").addEventListener("change", (e) => {
+  state.recheckMinutes = Number(e.target.value);
+  saveState();
+  scheduleAllNtfyReminders();
+  renderSettingsModal();
+});
+document.getElementById("escalateChk").addEventListener("change", (e) => {
+  state.escalateToSub = e.target.checked;
+  saveState();
+  scheduleAllNtfyReminders();
+});
+document.getElementById("myNameInput").addEventListener("change", (e) => {
+  state.myName = e.target.value.trim();
+  saveState();
 });
 document.getElementById("resetStatusBtn").addEventListener("click", () => {
   if (!confirm("すべての予定を「発注済」に戻し、通知履歴をリセットします。よろしいですか？")) return;
   state.scheduleData.forEach(i => i.status = "発注済");
   state.notifiedKeys = [];
-  state.scheduledNtfyKeys = [];
+  state.ntfyPlan = {};
+  state.acks = {};
   saveState();
   scheduleAllNtfyReminders();
   renderAll();
@@ -948,6 +1184,16 @@ document.getElementById("addItemBtn").addEventListener("click", () => {
 function renderSettingsModal(){
   document.getElementById("notifyMinutesSel").value = String(state.notifyMinutes);
   document.getElementById("ntfyTopicDisplay").value = NTFY_TOPIC;
+  document.getElementById("ntfySubTopicDisplay").value = NTFY_SUB_TOPIC;
+  document.getElementById("recheckMinutesSel").value = String(state.recheckMinutes);
+  document.getElementById("escalateChk").checked = !!state.escalateToSub;
+  document.getElementById("escalateChk").disabled = !recheckActive();
+  document.getElementById("myNameInput").value = state.myName || "";
+  document.getElementById("recheckHelp").textContent = state.recheckMinutes === 0
+    ? "再通知はオフです。"
+    : (recheckActive()
+      ? state.notifyMinutes + "分前に1回目の通知 → " + state.recheckMinutes + "分前になっても誰も「確認しました」を押していなければ、もう一度通知します。"
+      : "⚠ 再通知は1回目の通知（" + state.notifyMinutes + "分前）より後の時刻にしてください。今の設定では再通知されません。");
   updatePermissionUI();
 
   const dateList = document.getElementById("dateMasterList");
@@ -1087,6 +1333,7 @@ function openEntryModal(item){
   document.getElementById("fTeam").value = item ? item.team : "";
   document.getElementById("fPlace").value = item ? item.place : "";
   document.getElementById("fNote").value = item ? (item.note || "") : "";
+  document.getElementById("fAssignee").value = item ? (item.assignee || "") : "";
   renderQtyGrid(item);
   document.getElementById("deleteEntryBtn").hidden = !item;
   updateEntryPreview();
@@ -1105,6 +1352,7 @@ document.getElementById("saveEntryBtn").addEventListener("click", () => {
   const team = document.getElementById("fTeam").value.trim();
   const place = document.getElementById("fPlace").value.trim();
   const note = document.getElementById("fNote").value.trim();
+  const assignee = document.getElementById("fAssignee").value.trim();
 
   if (!team || !place || (!unset && !time)) { toast("チーム名・配送場所・設置時間は必須です"); return; }
 
@@ -1116,15 +1364,15 @@ document.getElementById("saveEntryBtn").addEventListener("click", () => {
 
   if (idRaw) {
     const item = state.scheduleData.find(i => i.id === Number(idRaw));
-    Object.assign(item, { date, time, nextDay, team, place, note }, qty);
+    Object.assign(item, { date, time, nextDay, team, place, note, assignee }, qty);
     addLog("✏️【編集】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
     scheduleNtfyReminder(item, true);
     toast("更新しました");
   } else {
-    const item = Object.assign({ id: state.nextId++, date, time, nextDay, team, place, note, status: "発注済" }, qty);
+    const item = Object.assign({ id: state.nextId++, date, time, nextDay, team, place, note, assignee, status: "発注済" }, qty);
     state.scheduleData.push(item);
     addLog("＋【新規追加】" + date + " " + (time || "時間未定") + " " + place + "（" + team + "）");
-    sendNtfyPush("🆕 新規登録", (time || "時間未定") + " " + place + "（" + team + "）" + (note ? ("\n📝 " + note) : ""));
+    sendNtfyPush("🆕 新規登録", buildNotice(item));
     scheduleNtfyReminder(item, true);
     toast("追加しました。通知を送信しました");
   }
@@ -1139,6 +1387,7 @@ function deleteScheduleItem(id){
   if (!confirm(item.date + " " + (item.time || "") + " " + item.place + " を削除しますか？")) return false;
   state.scheduleData = state.scheduleData.filter(i => i.id !== id);
   saveState();
+  cancelItemReminders(item, true);
   renderAll();
   toast("削除しました");
   return true;
@@ -1160,6 +1409,16 @@ function renderAll(){
 
 initServiceWorker();
 renderAll();
+
+// ntfyの通知についている「確認しました」ボタンから開かれた場合（?ack=予定ID@時刻）
+(function handleAckParam(){
+  const params = new URLSearchParams(location.search);
+  const key = params.get("ack");
+  if (!key) return;
+  history.replaceState(null, "", location.pathname);
+  pollAcks().then(() => acknowledge(key));
+})();
+
 checkSchedule();
 setInterval(renderHero, 30000);
 
