@@ -496,7 +496,35 @@ function itemPlans(item, dt, acked){
 // verbose=true のときは、なぜ予約されたか／されなかったかを通知ログに残す
 // （「＋ 追加」「編集」の直後など、ユーザー操作の結果として呼ぶ場合のみtrueにする）。
 // 戻り値: ntfyから429（送りすぎ）が返ったら "limited"
-async function scheduleNtfyReminder(item, verbose){
+// 20〜30台が同じWi-Fi（同じIPアドレス）から使っても、ntfy.shの回数制限
+// （1つのIPあたり約1分に12回）に引っかからないよう、通信は必要なときだけにする。
+// ・すでに他の端末が同じ内容を予約済みなら、送り直さない（予約一覧を1回読むだけ）
+// ・確認状況の読み込みは、通知時刻の前後だけ・画面表示中だけ・数分おき
+async function prepareSchedulingContext(ctx){
+  if (ctx.prepared) return;
+  ctx.prepared = true;
+  await pollAcks(true);
+  ctx.server = {};
+  for (const topic of [NTFY_TOPIC, NTFY_SUB_TOPIC]) {
+    try {
+      const res = await fetch("https://ntfy.sh/" + encodeURIComponent(topic) + "/json?poll=1&scheduled=1");
+      if (!res.ok) continue;
+      (await res.text()).split("\n").forEach(line => {
+        if (!line.trim()) return;
+        try {
+          const ev = JSON.parse(line);
+          if (!ev.sequence_id) return;
+          const k = topic + "/" + ev.sequence_id;
+          if (ev.event === "message") ctx.server[k] = ev;
+          else if (ev.event === "message_delete") delete ctx.server[k];
+        } catch (e) {}
+      });
+    } catch (e) {}
+  }
+}
+
+async function scheduleNtfyReminder(item, verbose, ctx){
+  ctx = ctx || {};
   const label = item.place + "（" + item.team + "）";
   const dt = item.status === "発注済" ? getItemDateTime(item) : null;
   if (!dt) {
@@ -523,6 +551,14 @@ async function scheduleNtfyReminder(item, verbose){
     }
     const sig = p.at + "|" + p.title + "|" + notice;
     if (state.ntfyPlan[p.seq] === sig) continue;
+    await prepareSchedulingContext(ctx);
+    if (state.acks[key]) return; // 他の端末で確認済みになっていた。次回のチェックで取り消す
+    const srv = ctx.server[p.topic + "/" + p.seq];
+    if (srv && srv.time === Math.round(p.at / 1000) && srv.title === p.title && srv.message === notice) {
+      state.ntfyPlan[p.seq] = sig; // 他の端末が同じ内容で予約済み
+      saveState();
+      continue;
+    }
     const status = await ntfyPublish({
       topic: p.topic,
       sequence_id: p.seq,
@@ -568,8 +604,9 @@ async function scheduleAllNtfyReminders(){
   schedulingNow = true;
   try {
     await pollAcks();
+    const ctx = {};
     for (const item of state.scheduleData.slice()) {
-      if (await scheduleNtfyReminder(item) === "limited") break; // 送りすぎ。次回の定期チェックで続きを予約
+      if (await scheduleNtfyReminder(item, false, ctx) === "limited") break; // 送りすぎ。次回の定期チェックで続きを予約
     }
   } finally {
     schedulingNow = false;
@@ -577,7 +614,26 @@ async function scheduleAllNtfyReminders(){
 }
 
 /* ---------- 「確認しました」（全端末で共有） ---------- */
-async function pollAcks(){
+let lastAckPoll = 0;
+const ACK_POLL_INTERVAL_MS = 120000 + Math.floor(Math.random() * 60000); // 2〜3分（端末ごとにずらす）
+
+// 「確認しました」ボタンが出ている予定（通知時刻〜設置時刻の1時間後）があるときだけ読みにいく
+function ackWindowActive(){
+  const now = Date.now();
+  return state.scheduleData.some(item => {
+    if (item.status !== "発注済") return false;
+    const dt = getItemDateTime(item);
+    if (!dt) return false;
+    return now >= dt.getTime() - state.notifyMinutes * 60000 - 60000 && now <= dt.getTime() + 60 * 60000;
+  });
+}
+
+async function pollAcks(force){
+  if (!force) {
+    if (document.hidden || !ackWindowActive()) return;
+    if (Date.now() - lastAckPoll < ACK_POLL_INTERVAL_MS) return;
+  }
+  lastAckPoll = Date.now();
   try {
     const res = await fetch("https://ntfy.sh/" + encodeURIComponent(NTFY_ACK_TOPIC) + "/json?poll=1&since=12h");
     if (!res.ok) return;
@@ -607,8 +663,9 @@ async function acknowledge(key){
     return;
   }
   if (!state.myName) {
-    const name = prompt("あなたの名前を入力してください（確認した人として全員に表示されます。⚙設定で変更できます）", "");
-    state.myName = name ? name.trim() : "";
+    let name = "";
+    try { name = prompt("あなたの名前を入力してください（確認した人として全員に表示されます。⚙設定で変更できます）", "") || ""; } catch (e) {}
+    state.myName = name.trim();
   }
   state.acks[key] = { by: state.myName, at: Date.now() };
   saveState();
@@ -1416,7 +1473,7 @@ renderAll();
   const key = params.get("ack");
   if (!key) return;
   history.replaceState(null, "", location.pathname);
-  pollAcks().then(() => acknowledge(key));
+  pollAcks(true).then(() => acknowledge(key));
 })();
 
 checkSchedule();
