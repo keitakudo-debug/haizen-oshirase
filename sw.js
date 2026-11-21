@@ -4,7 +4,7 @@
 // (works even for installed home-screen web apps on iOS 16.4+), unlike the
 // plain `new Notification()` constructor which iOS does not support there.
 
-const CACHE = 'haizen-oshirase-v3';
+const CACHE = 'haizen-oshirase-v4';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

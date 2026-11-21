@@ -428,12 +428,34 @@
   /* =================================================================
      印刷 / PDF レイアウト（エンタメ風タイムテーブル）
      ================================================================= */
-  #printRoot { display: none; }
   @page { size: A4 portrait; margin: 10mm 10mm 12mm; }
+  /* 画面上のプレビュー */
+  body.print-preview { background: #3a3d4a; padding-bottom: 40px; }
+  body.print-preview > *:not(#printRoot) { display: none !important; }
+  #printRoot { padding: 0 12px; overflow-x: hidden; }
+  .pv-bar {
+    position: sticky; top: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 0 -12px 10px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+    background: rgba(20,22,34,.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .pv-bar .pv-close { color: #fff; border-color: rgba(255,255,255,.25); }
+  .pv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pv-help { color: #d7dbea; font-size: 12px; line-height: 1.6; text-align: center; margin: 0 auto 10px; max-width: 640px; }
+  #printSheet { width: 190mm; margin: 0 auto; background: #fff; padding: 6mm 0; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  #printSheet .pr { padding: 0 4mm; }
+  /* PDFファイル化（html2canvas）では効かない装飾を、単色に置き換える */
+  .pr.exporting .pr-mega { background: none; color: #ffe1a6; -webkit-text-fill-color: #ffe1a6; }
+  .pr.simple.exporting .pr-mega { color: #111; -webkit-text-fill-color: #111; }
+  .pr.exporting .pr-cover::after, .pr.exporting .pr-cover::before { content: none; display: none; background: none; }
+  .pr.show.exporting .pr-cover { background: linear-gradient(135deg, #1d1446 0%, #3b1a5e 55%, #b0306f 100%); }
+  .pr.exporting .pr-ticket .barcode { background: none; border-top: 2.2mm solid #2b1a00; border-bottom: 1.2mm solid #2b1a00; height: 6mm; }
   @media print {
-    html, body { background: #fff !important; padding: 0 !important; }
+    html, body, body.print-preview { background: #fff !important; padding: 0 !important; }
     body > *:not(#printRoot) { display: none !important; }
-    #printRoot { display: block; }
+    #printRoot { display: block !important; padding: 0; overflow: visible; }
+    .pv-bar, .pv-help { display: none !important; }
+    #printSheet { width: auto; padding: 0; box-shadow: none; border-radius: 0; zoom: 1 !important; }
+    #printSheet .pr { padding: 0; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   }
   .pr { color: #14121f; font-family: "Zen Kaku Gothic New", sans-serif; font-size: 10pt; }
@@ -501,7 +523,7 @@
   .pr-time small { display: block; font-size: 7pt; font-weight: 900; color: var(--c); }
   .pr-time.unset b { font-family: "Zen Kaku Gothic New", sans-serif; font-size: 8.5pt; font-weight: 900; color: #777; }
   .pr-rail { position: relative; }
-  .pr-rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: .6mm; transform: translateX(-50%); background: color-mix(in srgb, var(--c) 45%, #fff); }
+  .pr-rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: .6mm; transform: translateX(-50%); background: var(--c); opacity: .45; }
   .pr-rail::after { content: ""; position: absolute; left: 50%; top: 3mm; width: 3mm; height: 3mm; border-radius: 50%; transform: translateX(-50%); background: #fff; border: .8mm solid var(--c); }
   .pr-card {
     position: relative; margin: 0 0 2.2mm; padding: 2.2mm 3.5mm 2.4mm 4mm; border-radius: 2.5mm;
@@ -645,11 +667,11 @@
     <label class="checkline" style="margin-bottom:8px;"><input type="checkbox" id="prTotals" checked> 日ごとの合計本数を載せる（積み込みチェック用）</label>
     <label class="checkline"><input type="checkbox" id="prNewPage"> 日程ごとに改ページする</label>
 
-    <p class="helptext" style="margin-top:14px;">「印刷する」を押すと印刷画面が開きます。プリンターの選択で<strong>「PDFに保存」</strong>を選ぶとPDFファイルになります（iPhoneは共有ボタンから「プリント」→ プレビューを拡大で PDF にできます）。</p>
+    <p class="helptext" style="margin-top:14px;">次の画面でプレビューを確認してから、<strong>「🖨 印刷する」</strong>（プリンターで「PDFに保存」も選べます）か、<strong>「⬇ PDFファイルを保存」</strong>（iPhoneのホーム画面アプリなど、印刷画面が開かない端末向け）を選べます。</p>
 
     <div class="modal-actions">
       <button class="btn ghost" data-close-modal="printModal">キャンセル</button>
-      <button class="btn show" id="doPrintBtn">🖨 印刷する / PDFに保存</button>
+      <button class="btn show" id="doPrintBtn">👀 プレビューを表示</button>
     </div>
   </div>
 </div>
@@ -803,7 +825,17 @@
   </div>
 </div>
 
-<div id="printRoot" aria-hidden="true"></div>
+<div id="printRoot" hidden>
+  <div class="pv-bar">
+    <button class="btn ghost pv-close" id="pvCloseBtn">✕ 閉じる</button>
+    <div class="pv-actions">
+      <button class="btn" id="pvPdfBtn">⬇ PDFファイルを保存</button>
+      <button class="btn show" id="pvPrintBtn">🖨 印刷する</button>
+    </div>
+  </div>
+  <p class="pv-help">プレビューです。「印刷する」→ プリンターで「PDFに保存」を選ぶか、「PDFファイルを保存」でそのままPDFを作れます。</p>
+  <div id="printSheet"></div>
+</div>
 
 <div class="toast-stack" id="toastStack"></div>
 
@@ -2079,17 +2111,120 @@ function doPrint(){
   saveState();
   const html = buildPrintHtml(opts);
   if (!html) { toast("選んだ条件に当てはまる予定がありません"); return; }
-  document.getElementById("printRoot").innerHTML = html;
+  document.getElementById("printSheet").innerHTML = html;
   closeModal("printModal");
-  const go = () => setTimeout(() => window.print(), 60);
-  // 見出し用フォントの読み込みを待ってから印刷画面を開く
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
+  openPrintPreview();
+}
+
+// 画面上にプレビューを出し、そこから「印刷」か「PDFファイルを保存」を選んでもらう。
+// （スマホは印刷画面が非同期で開くので、印刷後に中身を消すと白紙になる。ここでは消さない）
+function fitPreview(){
+  const sheet = document.getElementById("printSheet");
+  sheet.style.zoom = "";
+  const w = sheet.offsetWidth || 1;
+  const avail = document.getElementById("printRoot").clientWidth - 24;
+  const z = Math.min(1, avail / w);
+  sheet.style.zoom = z < 1 ? String(z) : "";
+}
+function openPrintPreview(){
+  const root = document.getElementById("printRoot");
+  root.hidden = false;
+  document.body.classList.add("print-preview");
+  window.scrollTo(0, 0);
+  fitPreview();
+}
+function closePrintPreview(){
+  document.body.classList.remove("print-preview");
+  document.getElementById("printRoot").hidden = true;
+  document.getElementById("printSheet").style.zoom = "";
+}
+window.addEventListener("resize", () => { if (document.body.classList.contains("print-preview")) fitPreview(); });
+
+function printNow(){
+  // ボタンを押した直後に同期で呼ぶ（遅らせるとiPhoneのSafariなどで無視される）
+  const sheet = document.getElementById("printSheet");
+  sheet.style.zoom = "";
+  try { window.print(); } catch (e) {}
+  setTimeout(fitPreview, 800);
+  if (isIOS && (window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches)) {
+    toast("印刷画面が開かないときは「⬇ PDFファイルを保存」を使ってください");
+  }
+}
+
+// 本物のPDFファイルを作って保存する（印刷画面が使えない端末用）。html2pdf.js を必要なときだけ読み込む
+let html2pdfLoading = null;
+function loadHtml2pdf(){
+  if (window.html2pdf) return Promise.resolve();
+  if (html2pdfLoading) return html2pdfLoading;
+  html2pdfLoading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    s.async = true; s.crossOrigin = "anonymous";
+    s.onload = resolve;
+    s.onerror = () => { html2pdfLoading = null; reject(new Error("load")); };
+    document.head.appendChild(s);
+  });
+  return html2pdfLoading;
+}
+
+let savingPdf = false;
+async function savePdfFile(){
+  if (savingPdf) return;
+  savingPdf = true;
+  const btn = document.getElementById("pvPdfBtn");
+  const label = btn.textContent;
+  btn.textContent = "⏳ PDFを作成中…";
+  btn.disabled = true;
+  const sheet = document.getElementById("printSheet");
+  try {
+    await loadHtml2pdf();
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    sheet.style.zoom = "";
+    const target = sheet.firstElementChild;
+    target.classList.add("exporting");
+    // プレビュー表示中のままだと、PDF化用にコピーされた中身が隠れて白紙になるので一時的に外す
+    document.body.classList.remove("print-preview");
+    window.scrollTo(0, 0);
+    const w = target.offsetWidth, h = target.offsetHeight;
+    // iPhoneはキャンバスの大きさに上限があるので、長いときは解像度を下げる
+    const scale = Math.max(1, Math.min(2, Math.sqrt(14000000 / Math.max(1, w * h))));
+    const now = new Date();
+    const fname = "配膳タイムテーブル_" + now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) + ".pdf";
+    const worker = window.html2pdf().set({
+      margin: [8, 8, 10, 8],
+      filename: fname,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0, windowWidth: w + 40 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css"], before: ".pr-day.newpage", avoid: [".pr-row", ".pr-total", ".pr-dayhead", ".pr-cover"] }
+    }).from(target);
+    try {
+      await worker.save();
+    } catch (e) {
+      // 保存がブロックされる端末では、PDFを新しいタブで開く（共有ボタンから保存できる）
+      const url = await window.html2pdf().set({ html2canvas: { scale }, jsPDF: { unit: "mm", format: "a4" } }).from(target).output("bloburl");
+      window.open(url, "_blank");
+    }
+    toast("📄 PDFファイルを保存しました");
+  } catch (e) {
+    toast("PDFの作成に失敗しました。ネットにつながっているか確認して、もう一度お試しください");
+  } finally {
+    if (sheet.firstElementChild) sheet.firstElementChild.classList.remove("exporting");
+    document.querySelectorAll(".html2pdf__overlay").forEach(el => el.remove());
+    document.body.classList.add("print-preview");
+    fitPreview();
+    btn.textContent = label;
+    btn.disabled = false;
+    savingPdf = false;
+  }
 }
 
 document.getElementById("printBtn").addEventListener("click", openPrintModal);
 document.getElementById("printBtn2").addEventListener("click", openPrintModal);
 document.getElementById("doPrintBtn").addEventListener("click", doPrint);
-window.addEventListener("afterprint", () => { document.getElementById("printRoot").innerHTML = ""; });
+document.getElementById("pvCloseBtn").addEventListener("click", closePrintPreview);
+document.getElementById("pvPrintBtn").addEventListener("click", printNow);
+document.getElementById("pvPdfBtn").addEventListener("click", savePdfFile);
 
 /* ---------- 3D ステージ（Three.js） ---------- */
 // ボトル・段ボール・紙コップが浮かぶステージ。読み込めない端末・オフでは何も描かない（画面は普通に使える）
